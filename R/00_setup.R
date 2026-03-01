@@ -8,17 +8,19 @@
 # - Set global options
 # - Ensure reproducibility
 #
-# This script must be sourced FIRST.
+
 ###############################################################################
 
 message("Running 00_setup.R ...")
 
 # ---------------------------------------------------------------------------
-# 1. Clean environment
+# 1. Clean environment (only if interactive)
 # ---------------------------------------------------------------------------
-rm(list = ls())
-gc()
-getwd()
+if (interactive()) {
+  rm(list = ls())
+  gc()
+}
+
 # ---------------------------------------------------------------------------
 # 2. Required packages
 # ---------------------------------------------------------------------------
@@ -31,26 +33,19 @@ required_packages <- c(
 )
 
 installed <- rownames(installed.packages())
+
 for (pkg in required_packages) {
   if (!pkg %in% installed) {
-    install.packages(pkg)
+    install.packages(pkg, dependencies = TRUE)
   }
 }
 
 invisible(lapply(required_packages, library, character.only = TRUE))
 
-# ---------------------------------------------------------------------------
-# 3. Global options
-# ---------------------------------------------------------------------------
-options(
-  scipen = 999,      # avoid scientific notation
-  digits = 4
-)
 
-set.seed(123456)
 
 # ---------------------------------------------------------------------------
-# 4. Project paths (DO NOT use setwd())
+# 4. Project paths (NO setwd())
 # ---------------------------------------------------------------------------
 paths <- list(
   data_raw       = here::here("data", "raw"),
@@ -59,17 +54,20 @@ paths <- list(
   output_figures = here::here("paper", "figures"),
   output_models  = here::here("output", "models")
 )
-
-# Create folders if they do not exist
-dir.create(paths$data_processed, showWarnings = F, recursive = TRUE)
-dir.create(paths$output_tables, showWarnings = FALSE, recursive = TRUE)
-dir.create(paths$output_figures, showWarnings = FALSE, recursive = TRUE)
-dir.create(paths$output_models, showWarnings = FALSE, recursive = TRUE)
+dir.create("data/raw", recursive = TRUE)
+# Create folders if missing
+dir.create(paths$data_processed, recursive = TRUE, showWarnings = FALSE)
+dir.create(paths$output_tables, recursive = TRUE, showWarnings = FALSE)
+dir.create(paths$output_figures, recursive = TRUE, showWarnings = FALSE)
+dir.create(paths$output_models, recursive = TRUE, showWarnings = FALSE)
 
 # ---------------------------------------------------------------------------
 # 5. Sanity checks
 # ---------------------------------------------------------------------------
-stopifnot(dir.exists(paths$data_raw))
-stopifnot(dir.exists(paths$data_processed))
+if (!dir.exists(paths$data_raw)) {
+  stop("Folder 'data/raw' not found. Place raw data there.")
+}
+
+
 
 message("00_setup.R completed successfully.")
