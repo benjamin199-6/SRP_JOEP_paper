@@ -4,13 +4,17 @@
 .Rproj.user/
 
 # Data 
+# 1. Ignore the data folder content by default
 data/*
-!data/raw/Benjamin_Kirchler_2022.csv
+
+# 2. ALLOW the entire raw and processed folders
+!data/raw/
 !data/processed/
-!data/**/.keep
-# (Keep these ignored as per your original)
+
+# 3. Specifically block these as per your original preference
 data/interim/*
 data/final/*
+!data/**/.keep
 
 # Output
 output/*
