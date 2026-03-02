@@ -1,14 +1,21 @@
-# R basics
+# R
 .Rhistory
 .RData
 .Rproj.user/
-.Ruserdata
 
-# Data
+# Data 
 data/*
-!data/raw/
+!data/raw/Benjamin_Kirchler_2022.csv
 !data/processed/
+!data/**/.keep
+# (Keep these ignored as per your original)
+data/interim/*
+data/final/*
 
-# OS
+# Output
+output/*
+!output/**/.keep
+
+# OS / editor
 .DS_Store
 Thumbs.db
