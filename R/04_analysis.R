@@ -179,7 +179,6 @@ stargazer(
   no.space = TRUE
 )
 
-message("04_analysis.R completed successfully.")
 
 library(car)
 library(sandwich)
@@ -360,208 +359,155 @@ stargazer(
 
 
 ################################################################################
-# --- 1. Prepare data: Ambiguity condition only ---
-df_amb <- data_analysis %>%
-  filter(Condition_Uncertainty == "Ambiguity") %>%
-  mutate(
-    # Convert beliefs (in %) to probabilities
-    pi0 = Belief_0 / 100,
-    pi1 = Belief_1 / 100,
-    pi2 = Belief_2 / 100,
-    
-    # Expected number of bombs (E[s])
-    exp_bombs = (0 * Belief_0 + 1 * Belief_1 + 2 * Belief_2) / 100,
-    
-    # Observed outcome at end of round (1 if bomb clicked)
-    bomb_occured = ifelse(Feedback == "Feedback_bomb", 1, 0)
-  )
-
-# --- 2. Define likelihood and expected bomb probability functions ---
-safe_prob <- function(s, k, N = 100) {
-  # Probability that all k clicks are safe if there are s bombs
-  if (k > (N - s)) return(0)
-  choose(N - s, k) / choose(N, k)
-}
-
-expected_bomb_prob_mixture <- function(pi0, pi1, pi2, k, N = 100) {
-  # Mixture over states s = 0, 1, 2 weighted by beliefs
-  p_safe0 <- safe_prob(0, k, N)
-  p_safe1 <- safe_prob(1, k, N)
-  p_safe2 <- safe_prob(2, k, N)
-  p_safe  <- pi0 * p_safe0 + pi1 * p_safe1 + pi2 * p_safe2
-  1 - p_safe   # expected probability of at least one bomb
-}
-
-# --- 3. Compute prediction error ("surprise") ---
-df_amb <- df_amb %>%
-  rowwise() %>%
-  mutate(
-    exp_p_bomb = expected_bomb_prob_mixture(pi0, pi1, pi2, k = Clicks, N = 100),
-    surprise   = bomb_occured - exp_p_bomb   # prediction error
-    # > 0: outcome worse than expected, < 0: safer than expected
-  ) %>%
-  ungroup() %>%
-  arrange(Subject, Round)
-
-df_amb$exp_p_bomb
-
-
-# --- 4. Create next-round deltas (beliefs and clicks) ---
-panel <- df_amb %>%
-  group_by(Subject) %>%
-  arrange(Round, .by_group = TRUE) %>%
-  mutate(
-    exp_bombs_next = lead(exp_bombs),
-    Clicks_next    = lead(Clicks),
-    # Deltas from t to t+1
-    d_exp_bombs    = exp_bombs_next - exp_bombs,
-    d_clicks       = Clicks_next - Clicks
-  ) %>%
-  ungroup() %>%
-  filter(!is.na(d_exp_bombs), !is.na(d_clicks))
-
-# --- 5. Belief updating model ---
-# Tests whether feedback surprise affects belief change (Bayesian learning)
-# and whether this depends on SRP (motivated reasoning hypothesis).
-belief_model <- lm(d_exp_bombs ~ surprise * Condition_SRP + factor(Round), data = panel)
-belief_vcov  <- sandwich::vcovCL(belief_model, cluster = ~ Subject)
-belief_res   <- coeftest(belief_model, vcov = belief_vcov)
-print(belief_res)
-
-# Interpretation:
-# surprise coefficient (β1) > 0 → Bayesian updating (more pessimistic after bombs)
-# interaction (β2) significant → motivated updating (SRP moderates learning)
-
-# --- 6. Behavioral adjustment model ---
-# Tests whether feedback affects change in risk-taking (clicks)
-# and whether SRP moderates this adjustment.
-behavior_model <- lm(d_clicks ~ surprise * Condition_SRP + Clicks + factor(Round), data = panel)
-behavior_vcov  <- sandwich::vcovCL(behavior_model, cluster = ~ Subject)
-behavior_res   <- coeftest(behavior_model, vcov = behavior_vcov)
-print(behavior_res)
-
-# Interpretation:
-# surprise coefficient (δ1) < 0 → risk reduction after unexpected bombs
-# interaction (δ2) significant → SRP moderates behavioral adjustment
-
-# --- 7. Optional visualization ---
-library(ggplot2)
-
-# Belief updating curve
-ggplot(panel, aes(x = surprise, y = d_exp_bombs, color = Condition_SRP)) +
-  geom_point(alpha = 0.3) +
-  geom_smooth(method = "lm", se = TRUE) +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  labs(
-    x = "Surprise_t (Bomb_t - Expected Bomb Prob_t)",
-    y = "Δ Expected bombs (t+1 - t)",
-    title = "Belief Updating by Surprise (Ambiguity only)"
-  ) +
-  theme_minimal()
-
-# Risk adjustment curve
-ggplot(panel, aes(x = surprise, y = d_clicks, color = Condition_SRP)) +
-  geom_point(alpha = 0.3) +
-  geom_smooth(method = "lm", se = TRUE) +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  labs(
-    x = "Surprise_t (Bomb_t - Expected Bomb Prob_t)",
-    y = "Δ Clicks (t+1 - t)",
-    title = "Risk Adjustment by Surprise (Ambiguity only)"
-  ) +
-  theme_minimal()
-
-library(dplyr)
-
-library(ggplot2)
-
-library(dplyr)
-library(ggplot2)
-
-# --- Categorize feedback surprise direction and summarize ---
-panel_clicks <- panel %>%
-  mutate(
-    surprise_dir = case_when(
-      surprise > 0  ~ "Unexpected Bomb (worse)",
-      surprise <= 0 ~ "Safer than Expected"
-    )
-  ) %>%
-  group_by(Condition_SRP, surprise_dir) %>%
-  summarise(
-    mean_d_clicks = mean(d_clicks, na.rm = TRUE),
-    se_d_clicks   = sd(d_clicks, na.rm = TRUE) / sqrt(n()),
-    N             = n(),
-    .groups = "drop"
-  )
-
-# --- Plot ---
-ggplot(panel_clicks, aes(x = surprise_dir, y = mean_d_clicks, fill = Condition_SRP)) +
-  geom_col(position = position_dodge(width = 0.7), width = 0.6, color = "black") +
-  geom_errorbar(aes(ymin = mean_d_clicks - se_d_clicks,
-                    ymax = mean_d_clicks + se_d_clicks),
-                width = 0.15, position = position_dodge(width = 0.7)) +
-  geom_text(
-    aes(
-      label = paste0("N=", N),
-      vjust = ifelse(mean_d_clicks >= 0, -0.8, 1.5)
-    ),
-    position = position_dodge(width = 0.7),
-    size = 3
-  ) +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  scale_fill_manual(
-    values = c("High" = "black", "Low" = "grey70"),
-    labels = c("High SRP", "Low SRP")
-  ) +
-  labs(
-    x = "",
-    y = "Change in Clicks (Δ Risk-Taking)",
-    title = "",
-    fill = "SRP Condition"
-  ) +
-  theme_minimal(base_size = 13) +
-  theme(
-    legend.position = "top",
-    legend.title = element_blank(),
-    axis.text.x = element_text(size = 12),
-    axis.title.y = element_text(size = 13),
-    plot.title = element_text(face = "bold", size = 14),
-    panel.grid.minor = element_blank()
-  )
 
 
 
-ggsave(
-  filename = "Behavioral updating.png",  # File name
-  width = 10,       # width in inches
-  height = 5,       # height in inches
-  dpi = 300         # resolution for print-quality figure
+### Appendix 
+
+
+
+data <- readRDS(
+  file.path(paths$data_processed, "analysis_data_full.rds")
 )
 
 
-library(ggplot2)
-library(patchwork)  # install.packages("patchwork")
+r1 <- filter(data, Round == 1)
+r2 <- filter(data, Round == 2)
+r3 <- filter(data, Round == 3)
+r4 <- filter(data, Round == 4)
+r5 <- filter(data, Round == 5)
+
+model_formula1 <- Clicks ~ Condition_SRP +
+  Condition_Uncertainty +
+  Risk_attitude +
+  Female +
+  Age +
+  Income_1
+
+model_formula <- Clicks ~ Condition_SRP +
+  Condition_Uncertainty +
+  Risk_attitude +
+  Female +
+  Age +
+  Income_1 +
+  Feedback
+
+# Poisson marginal effects (paper specification)
+
+reg1.1 <- poissonmfx(model_formula1, data = r1, atmean = TRUE, robust = TRUE)
+reg1.2 <- poissonmfx(model_formula,  data = r2, atmean = TRUE, robust = TRUE)
+reg1.3 <- poissonmfx(model_formula,  data = r3, atmean = TRUE, robust = TRUE)
+reg1.4 <- poissonmfx(model_formula,  data = r4, atmean = TRUE, robust = TRUE)
+reg1.5 <- poissonmfx(model_formula,  data = r5, atmean = TRUE, robust = TRUE)
+
+# ---------------------------------------------------------------------------
+# OLS robustness (HC1 SE)
+# ---------------------------------------------------------------------------
+
+ols1 <- lm(model_formula1, data = r1)
+ols2 <- lm(model_formula,  data = r2)
+ols3 <- lm(model_formula,  data = r3)
+ols4 <- lm(model_formula,  data = r4)
+ols5 <- lm(model_formula,  data = r5)
+
+se1 <- sqrt(diag(vcovHC(ols1, type="HC1")))
+se2 <- sqrt(diag(vcovHC(ols2, type="HC1")))
+se3 <- sqrt(diag(vcovHC(ols3, type="HC1")))
+se4 <- sqrt(diag(vcovHC(ols4, type="HC1")))
+se5 <- sqrt(diag(vcovHC(ols5, type="HC1")))
+
+# Print regression table
+stargazer(
+  ols1, ols2, ols3, ols4, ols5,
+  type = "text",
+  se = list(se1,se2,se3,se4,se5),
+  title = "Round-specific OLS regressions"
+)
 
 
-panel <- panel %>%
-  mutate(
-    surprise_dir = case_when(
-      surprise > 0  ~ "Unexpected bomb (worse)",
-      surprise <= 0 ~ "Safer than expected"
-    )
-  )
+stargazer(
+  reg1.1$fit,
+  reg1.2$fit,
+  reg1.3$fit,
+  reg1.4$fit,
+  reg1.5$fit,
+  type = "text",
+  title = "Round-specific Poisson regressions (Marginal Effects)",
+  
+  coef = list(
+    reg1.1$mfxest[,1],
+    reg1.2$mfxest[,1],
+    reg1.3$mfxest[,1],
+    reg1.4$mfxest[,1],
+    reg1.5$mfxest[,1]
+  ),
+  
+  se = list(
+    reg1.1$mfxest[,2],
+    reg1.2$mfxest[,2],
+    reg1.3$mfxest[,2],
+    reg1.4$mfxest[,2],
+    reg1.5$mfxest[,2]
+  ),
+  
+  column.labels = c("R1","R2","R3","R4","R5"),
+  dep.var.labels = "Clicks",
+  digits = 3
+)
 
-# Check that it worked
-table(panel$surprise_dir, panel$Condition_SRP)
 
-# --- 2. Run separate regressions by feedback direction ---
-# (a) Safer than expected
-model_safer <- lm(d_clicks ~ Condition_SRP + Clicks,
-                  data = subset(panel, surprise_dir == "Safer than expected"))
-summary(model_safer)
+#### Joint analysis 
 
-# (b) Unexpected bomb (worse)
-model_worse <- lm(d_clicks ~ Condition_SRP + Clicks,
-                  data = subset(panel, surprise_dir == "Unexpected bomb (worse)"))
-sjPlot::tab_model(model_safer)
+model_1 <- Clicks ~ Condition_SRP + Condition_Uncertainty
+model_2 <- Clicks ~ Condition_SRP:Condition_Uncertainty
+
+# Poisson marginal effects 
+pois_all_1 <- poissonmfx(data = data, formula = model_1, atmean = TRUE, robust = TRUE)
+pois_all_2 <- poissonmfx(data = data, formula = model_2, atmean = TRUE, robust = TRUE)
+
+# OLS robustness 
+ols_all_1 <- lm(model_1, data = data)
+ols_all_2 <- lm(model_2, data = data)
+
+se_ols_all_1 <- sqrt(diag(vcovHC(ols_all_1, type = "HC1")))
+se_ols_all_2 <- sqrt(diag(vcovHC(ols_all_2, type = "HC1")))
+
+stargazer(
+
+  pois_all_1$fit,
+  pois_all_2$fit,
+  ols_all_1,
+  ols_all_2,
+  
+  type = "text",   
+  title = "Pooled Regression Results (All Rounds)",
+  
+  dep.var.labels = "Clicks",
+  
+  column.labels = c(
+    "Poisson: Main",
+    "Poisson: Interaction",
+    "OLS: Main",
+    "OLS: Interaction"
+  ),
+  
+  # ---- IMPORTANT PART ----
+  coef = list(
+    pois_all_1$mfxest[,1],
+    pois_all_2$mfxest[,1],
+    coef(ols_all_1),
+    coef(ols_all_2)
+  ),
+  
+  se = list(
+    pois_all_1$mfxest[,2],
+    pois_all_2$mfxest[,2],
+    se_ols_all_1,
+    se_ols_all_2
+  ),
+  
+  digits = 3,
+  align = TRUE,
+  no.space = TRUE
+)
 
