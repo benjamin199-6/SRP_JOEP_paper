@@ -1,17 +1,14 @@
-# R
+# R basics
 .Rhistory
 .RData
 .Rproj.user/
+.Ruserdata
 
-# Data (never commit real data)
-data/interim/*
-data/final/*
-!data/**/.keep
+# Data
+data/*
+!data/raw/
+!data/processed/
 
-# Output
-output/*
-!output/**/.keep
-
-# OS / editor
+# OS
 .DS_Store
 Thumbs.db

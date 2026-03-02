@@ -1,0 +1,26 @@
+{
+    "id": "E1A28BD7",
+    "path": "~/GitHub Lokal/SRP_JOEP_paper/R/01_load_data.R",
+    "project_path": "R/01_load_data.R",
+    "type": "r_source",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1772362296564.0,
+    "source_on_save": false,
+    "relative_order": 5,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "18,0",
+        "scrollLine": "0"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1772360110,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1772360110,
+    "read_only": false,
+    "read_only_alternatives": []
+}

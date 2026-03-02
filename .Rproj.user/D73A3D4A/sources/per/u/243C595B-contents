@@ -1,0 +1,1633 @@
+rm(list = ls())
+
+# Loading required libraries for data manipulation, visualization, and analysis
+library(haven)    # To import data from SPSS, Stata, and SAS files
+library(sjPlot)   # For creating plots and data visualizations
+library(dplyr)    # For data manipulation functions like filter and mutate
+library(stringr)  # For handling string operations
+library(magrittr) # Provides the '%>%' pipe operator for clearer syntax
+library(tidyr)    # To tidy data, transforming it to a desirable shape
+library(lmtest)   # For performing tests on linear regression models
+library(sandwich) # To compute robust standard errors
+library(readr)    # For reading CSV and text files more efficiently
+library(ggplot2)  # For creating versatile plots
+library(mfx)      # For marginal effects in the poission model 
+library(margins)  # For marginal effects in general 
+library(stargazer) # For latex table 
+library(tableone)
+##### Data Import #####
+# Set the working directory to the location of the data file
+#setwd("~/Library/Mobile Documents/com~apple~CloudDocs/Benjamin /PHD/Publications/2025/Revision SRP Paper JOEP/SRP/Masterarbeit/Daten")
+# Reading the dataset from a CSV file
+setwd("C:/Users/AK902545/iCloudDrive/Benjamin_/PHD/Publications/2025/Revision SRP Paper JOEP")
+data <- read_csv("Benjamin+Kirchler_April+16,+2022_09.48.csv")
+table(data$Progress)
+### Data Cleaning ###
+# Filtering out participants who have not completed the survey
+data <- data %>% filter(Progress >= 100)
+
+# Removing personal information columns that are not necessary for analysis
+data <- data[, 19:89]
+
+# Assigning a unique identifier to each participant for tracking
+data$ID <- as.factor(seq(from = 1, to = nrow(data), by = 1))
+
+### Data Transformation ###
+# The script prepares the data for analysis by performing several transformations:
+# - Wide to long format conversion for various time-specific variables
+# - Filtering and selecting specific columns for analysis
+# - Renaming columns for clarity
+
+# The transformations include handling beliefs data, merging datasets, and adjusting variables
+
+# Final steps involve creating dummy variables for categorical data
+# And preparing the dataset for regression analysis by selecting and renaming variables
+
+
+# The script concludes with preparing data for regression analysis
+# Including creating interaction terms and performing subset analysis based on conditions
+
+# Note: The actual transformations, filtering, and renaming operations are specific to the dataset
+# and are aimed at preparing the data for analysis according to the study's requirements.
+
+# The script also includes sections for visualizing the data
+# Using ggplot2 for bar plots and line plots to explore the data visually
+# Before moving on to regression analysis.
+
+# For the regression analysis, several models are fit to the data
+# Including Poisson regression models for count data and OLS models for continuous outcomes
+# The regression analysis explores the effects of social reference points, uncertainty conditions,
+# and other covariates on participants' choices and beliefs.
+
+# The script ends with creating robust standard errors for the regression models
+# And presenting the results in a tabular format using the stargazer package.
+
+# This R script is structured to facilitate understanding of the steps taken from data import and cleaning,
+# through transformation and analysis, to the presentation of results,
+# making it easier for others to follow the analysis process and replicate the study.
+
+
+# Remove columns 39 to 43 from 'data' to focus on relevant variables
+a = data[,-c(39:43)]
+
+# Transform 'totalBoxesClickedArr1:totalBoxesClickedArr5' from wide to long format
+# 'Round' becomes the new variable capturing the original column names
+# 'Clicks' captures the values from these columns
+
+data_long_a <- gather(data = a, key = "Round", value = "Clicks", totalBoxesClickedArr1:totalBoxesClickedArr5, factor_key = TRUE)
+
+# Select columns 'ID' and 'nBombsArr1:nBombsArr5' from 'data'
+
+b=data %>% dplyr::select(ID,nBombsArr1:nBombsArr5)
+
+# Transform 'nBombsArr1:nBombsArr5' from wide to long format
+# Excluding redundant first two columns after the transformation for cleanup
+data_long_b <- gather(data = b, Round, Bombs_hidden, nBombsArr1:nBombsArr5, factor_key=TRUE)
+data_long_b=data_long_b[,-c(1,2)]
+# Select columns 'ID' and 'bombsClickedArr1:bombsClickedArr5' from 'data'
+
+c = data %>% dplyr::select(ID, bombsClickedArr1:bombsClickedArr5)
+
+# Transform 'bombsClickedArr1:bombsClickedArr5' from wide to long format
+# Similar cleanup as above
+
+data_long_c <- gather(data = c, Round, Bombs_clicked, bombsClickedArr1:bombsClickedArr5, factor_key=TRUE)
+data_long_c=data_long_c[,-c(1,2)]
+# Combine the three long format datasets into a single dataframe
+# 'long' contains all transformed data with consistent 'Round' identifiers
+
+long = cbind(data_long_a, data_long_b, data_long_c)
+
+# Convert 'Round' to factor and then to numeric for analysis purposes
+long$Round = as.factor(long$Round)
+long$Round = as.numeric(as.character(long$Round))
+
+# Cleanup 
+rm(a, b, c, data_long_a, data_long_b, data_long_c)
+
+
+# Select relevant belief columns and the participant ID from the dataset
+belief <- data %>% 
+  dplyr::select(Belief_R1.0:Belief_R5.2, ID) %>%
+  # Rename the selected columns for clarity and consistency
+  dplyr::rename(
+    treat1.1.param0 = Belief_R1.0, treat1.1.param1 = Belief_R1.1, treat1.1.param2 = Belief_R1.2,
+    treat1.2.param0 = Belief_R2.0, treat1.2.param1 = Belief_R2.1, treat1.2.param2 = Belief_R2.2,
+    treat1.3.param0 = Belief_R3.0, treat1.3.param1 = Belief_R3.1, treat1.3.param2 = Belief_R3.2,
+    treat1.4.param0 = Belief_R4.0, treat1.4.param1 = Belief_R4.1, treat1.4.param2 = Belief_R4.2,
+    treat1.5.param0 = Belief_R5.0, treat1.5.param1 = Belief_R5.1, treat1.5.param2 = Belief_R5.2
+  )
+
+# Duplicate the ID column for a unique identifier in the upcoming merge process
+belief$ID1 <- belief$ID
+# Optionally, remove the last column if it is not needed for analysis
+belief <- belief[,-c(16)]
+
+# Convert the belief data from wide to long format to facilitate analysis
+# 'treatment', 'round', and 'value' columns are specified to structure the long format
+belief_long <- tidyr::pivot_longer(belief, 
+                                   cols = starts_with("t"), 
+                                   names_to = c("treatment", "round", ".value"), 
+                                   names_pattern = "(\\w+)\\.(\\d+)\\.(\\w+)") %>%
+  # Rename parameters to more understandable names
+  dplyr::rename(Belief_0 = param0, Belief_1 = param1, Belief_2 = param2)
+
+# Prepare the data for merging by creating a composite unique identifier (uid)
+# This uid is used for a consistent merge basis between datasets
+long <- belief_long %>%
+  group_by(ID1) %>%
+  mutate(uid = paste0(row_number(), ID1)) %>%
+  left_join(
+    long %>% 
+      group_by(ID) %>% 
+      mutate(uid = paste0(row_number(), ID)),
+    by = "uid"
+  ) %>%
+  # Remove the temporary uid column after merging
+  dplyr::select(-uid)
+
+# Clean up the dataset post-merge and create dummy variables for categorical 'round' data
+long <- long[,-c(10:29)] # Adjust the column range as per dataset specifics
+long <- fastDummies::dummy_cols(long, select_columns = "round")
+
+# Finalize data preparation by setting conditions for 'Uncertainty_Condition' and 'SRP_Condition'
+df <- long %>%
+  mutate(
+    Uncertainty_Conditon = as.factor(case_when(risk < 1 ~ "Ambiguity", TRUE ~ "Risk")),
+    SRP_Conditon = as.factor(case_when(highAmountOfMoney < 1 ~ "Low", TRUE ~ "High"))
+  )
+
+# Clean up intermediate data frames to free memory and avoid clutter
+rm(belief, belief_long, data_long, long)
+
+
+# Categorize participants' risk attitudes based on their answers to the Risk Task
+df <- df %>%
+  mutate(
+    r_attitude = case_when(
+      Risk_Task_Answer <= 2 ~ "High_aver",
+      Risk_Task_Answer > 2 & Risk_Task_Answer <= 5 ~ "Moderate_aver",
+      Risk_Task_Answer > 5 & Risk_Task_Answer <= 7 ~ "Low_aver",
+      Risk_Task_Answer > 7 ~ "Risk_loving"
+    ),
+    # Categorize participants' gender; assumes binary coding in original data
+    female = case_when(
+      Sex > 1 & Sex <= 3 ~ 1,  #  'Sex' coded as indicates female
+      TRUE ~ 0  # All other cases considered not female (presumably male in binary coding)
+    ),
+    r_attitude = as.factor(r_attitude),  # Convert risk attitude to a factor for analysis
+    female = as.factor(female),  # Convert gender to a factor
+    Bomb_new = ifelse(Bombs_clicked %in% c(1, 2), 1, 0)  # New variable based on bomb clicks
+  ) %>%
+  group_by(ID) %>%
+  mutate(
+    Bomb_new_t_minus_1 = lag(Bomb_new)  # Create a lagged version of the Bomb_new variable
+  ) %>%
+  ungroup()  # Ensure the dataframe is not grouped for further analysis
+
+
+names(df)
+# Selecting and renaming columns for clarity
+df <- df %>%
+  dplyr::select(r_attitude, round, Belief_0, Belief_1, Belief_2, UG_Person_A_1, UG_P_B, Age, Sex, EDU, Income_1, ID, Clicks, Uncertainty_Conditon, SRP_Conditon, Bomb_new_t_minus_1, Bomb_new) %>%
+  rename(
+    Round = round,
+    Age = Age,
+    Gender = Sex,
+    Education_Level = EDU,
+    Monthly_Income = Income_1,
+    Participant_ID = ID,
+    Clicks = Clicks,
+    Condition_Uncertainty = Uncertainty_Conditon,
+    Condition_SRP = SRP_Conditon,
+    Feedback = Bomb_new_t_minus_1,
+    Risk_attitude = r_attitude
+  )
+
+# Adjust feedback to factor with levels and handle NA values
+df <- df %>%
+  mutate(Feedback = case_when(
+    is.na(Feedback) ~ "no feedback", ## no feedback in round 1 before playing .... 
+    Feedback == 1 ~ "Feedback_bomb",
+    Feedback == 0 ~ "Feedback_no_bomb",
+    TRUE ~ as.character(Feedback)  # Catch-all for unexpected values
+  )) %>%
+  mutate(Feedback = factor(Feedback, levels = c("no feedback", "Feedback_no_bomb", "Feedback_bomb")))
+
+# Adjust Education_Level to a more descriptive factor
+table(df$Education_Level)
+df$edu=df$Education_Level
+df <- df %>%
+  mutate(Education_Level = case_when(
+    Education_Level %in% 1 ~ "Low",
+    Education_Level %in% 2:3 ~ "Medium",
+    Education_Level %in% 4:6 ~ "High",
+    TRUE ~ as.character(Education_Level)  # Handles values outside specified ranges
+  ))
+
+# Clean the dataframe from entries with missing 'Clicks' data
+df <- df[!is.na(df$Clicks), ]
+
+# Relevel feedback for analysis and convert gender and treatment period to factors
+df$Feedback <- relevel(df$Feedback, ref = "Feedback_no_bomb")
+df$Subject = df$Participant_ID
+df$Female = ifelse(df$Gender == 2, 1, 0)
+df$Female = as.factor(df$Female)
+df$TreatmentPeriod = ifelse(df$Round == 1, 1, 0)
+df$TreatmentPeriod = as.factor(df$TreatmentPeriod)
+df$TreatmentPeriod = relevel(df$TreatmentPeriod, ref = "1")
+df$Round = as.numeric(df$Round)
+df$Round = as.factor(df$Round)
+
+
+
+
+names(df)
+
+
+# No need to specify factor variables since these are all numeric
+# Create the table, stratified by 'Condition_Uncertainty' and 'Condition_SRP'
+
+
+df$Bomb_new
+# Filter the dataframe to exclude specific conditions based on uncertainty and clicks
+filtered_df <- df %>%
+  filter(!(Condition_Uncertainty == "Risk" & Clicks >= 100))
+
+
+#filtered_df <- df # IMPORTANT UNcomment if analysis should run with full sample!!! 
+
+
+df_unique <- df %>%
+  distinct(Participant_ID, .keep_all = TRUE)
+
+vars <- c("Age", "Gender", "Education_Level", "Monthly_Income", "Risk_attitude","UG_Person_A_2","UG_Person_A_1")
+
+catVars <- c("Gender", "Education_Level", "Condition_Uncertainty", 
+             "Condition_SRP", "Feedback", "Risk_attitude")
+
+# Create the table, optionally stratified by 'Risk_attitude' or any other variable
+descriptive_table <- CreateTableOne(vars = vars, 
+                                    strata = c("Condition_Uncertainty", "Condition_SRP"),
+                                    data = df_unique, 
+                                    factorVars = catVars)
+
+
+descriptive_table
+
+
+vars_new <- c("Belief_0", "Belief_1", "Belief_2", "Bomb_new", "Bombs_clicked", "Clicks")
+
+descriptive_table_new <- CreateTableOne(vars = vars_new, 
+                                        strata = c("Condition_Uncertainty", "Condition_SRP"), 
+                                        data = filtered_df)
+descriptive_table_new
+
+########################## Descriptive Analysis ################################
+
+# Table for descriptives missing! 
+
+
+########################## Simple Barplot  ################################
+# Group data by SRP condition and Uncertainty condition to calculate mean clicks and standard errors
+# --- Clean labels and consistent color scheme ---
+library(dplyr)
+library(ggplot2)
+library(wesanderson)
+
+# --- Summary by round ---
+summary <- filtered_df %>%
+  group_by(Condition_SRP, Condition_Uncertainty, Round) %>%
+  summarise(
+    Mean_Clicks = mean(Clicks, na.rm = TRUE),
+    SE_Clicks   = sd(Clicks, na.rm = TRUE) / sqrt(n()),
+    .groups = "drop"
+  )
+
+# Wes palette (2 colors for SRP)
+wes_cols <- wes_palette("Darjeeling1", 2, type = "discrete")
+
+# Clean labels
+summary <- summary %>%
+  mutate(
+    Condition_SRP = recode(Condition_SRP,
+                           "High" = "High SRP",
+                           "Low"  = "Low SRP"),
+    Condition_Uncertainty = recode(Condition_Uncertainty,
+                                   "Ambiguity" = "Ambiguity",
+                                   "Risk" = "Risk")
+  )
+
+# --- Plot ---
+line_plot_clean <- ggplot(summary,
+                          aes(x = as.numeric(Round),
+                              y = Mean_Clicks,
+                              color = Condition_SRP,
+                              group = Condition_SRP)) +
+  geom_line(size = 1.) +
+  geom_point(size = 2.2) +
+  geom_errorbar(aes(ymin = Mean_Clicks - SE_Clicks,
+                    ymax = Mean_Clicks + SE_Clicks),
+                width = 0.12,
+                alpha = 0.4) +
+  scale_color_manual(values = wes_cols) +
+  facet_wrap(~Condition_Uncertainty) +
+  coord_cartesian(ylim = c(27, 50)) +
+  labs(
+    x = "Round",
+    y = "Mean Clicks",
+    color = "SRP Condition"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    legend.position = "bottom",
+    legend.title = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+
+line_plot_clean
+
+ggsave("Figure5_Clean.png",
+       plot = line_plot_clean,
+       width = 8,
+       height = 5,
+       dpi = 600)
+
+
+
+
+
+
+
+
+################################### Feedback after Bomb ########################
+
+df_changes <- filtered_df %>% filter(Round %in% c(1, 2)) %>%
+  group_by(Subject) %>%
+  summarise(
+    Clicks_Round1 = Clicks[Round == 1],  # Clicks in Round 1
+    Clicks_PostFeedback = Clicks[Round == 2],  # Clicks in the round immediately after receiving feedback
+    Change_in_Clicks = Clicks_PostFeedback - Clicks_Round1,  # Calculate the change in clicks
+    Feedback = Feedback[Round == 2],  # Feedback received
+    Condition_Uncertainty,  # Record Uncertainty condition
+    Condition_SRP,  # Record SRP condition
+    .groups = 'drop'  # Ungroup data after summarization
+  )
+
+
+
+clicks_round1 <- filtered_df %>%
+  filter(Round == 1) %>%
+  dplyr::select(Subject, Clicks_Round1 = Clicks)
+
+# Step 2: Join this back to the main dataframe to have Round 1 clicks alongside later rounds for each Subject
+change <- filtered_df %>% 
+  left_join(clicks_round1, by = "Subject") %>%
+  mutate(
+    Change_in_Clicks = if_else(Round == 1, NA_real_, Clicks - Clicks_Round1),
+    Percentage_Change_Clicks = if_else(Round == 1, NA_real_, 100 * (Clicks - Clicks_Round1) / Clicks_Round1),
+    Feedback = if_else(Round == 1, NA_character_, as.character(Feedback))
+  )
+change$Percentage_Change_Clicks
+# Filter out Round 1 for the analysis since it's used as baseline
+df_changes <- change %>%
+  filter(Round != 1) %>%
+  dplyr::select(Subject, Round, Change_in_Clicks, Feedback, Condition_Uncertainty, Condition_SRP)
+
+
+mean_changes <- df_changes %>%
+  group_by(Round, Feedback, Condition_Uncertainty) %>% ### Change the grouping variable to Conditon_SRP for High low difference
+  summarise(Mean_Change = mean(Change_in_Clicks, na.rm = TRUE),
+            SE_Change=sd(Change_in_Clicks, na.rm = TRUE) / sqrt(n()) )%>%
+  ungroup()
+
+mean_changes$Round=as.factor(mean_changes$Round)
+
+
+
+##### Feedback between Ambiguity and Risk conditon 
+
+
+ggplot(mean_changes, aes(x = Round, y = Mean_Change, fill = Feedback)) +
+  geom_bar(stat = "identity", position = position_dodge(), color = "black", width = 0.7) +
+  scale_fill_manual(values = c("Feedback_bomb" = "black", "Feedback_no_bomb" = "grey")) +
+  geom_errorbar(aes(ymin = Mean_Change - SE_Change, ymax = Mean_Change + SE_Change),  # Example error margins
+                width = 0.25, position = position_dodge(0.7)) +
+  labs(title = "Immediate Effect of Feedback on Mean Change in Clicks",
+       x = "Condition SRP",
+       y = "Mean Change in Clicks") +
+  theme_minimal() +
+  facet_grid(~Condition_Uncertainty)+
+  theme(legend.title = element_blank(), legend.position = "top")
+
+
+df_changes$Interaction=interaction(df_changes$Condition_Uncertainty,df_changes$Condition_SRP)
+
+
+
+
+
+#### For SRP Conditon and Uncertainty Conditon 
+
+mean_changes_2 <- df_changes %>%
+  group_by(Round, Feedback, Interaction) %>%
+  summarise(Mean_Change = mean(Change_in_Clicks, na.rm = TRUE),
+            SE_Change=sd(Change_in_Clicks, na.rm = TRUE) / sqrt(n()) )%>%
+  ungroup()
+
+
+
+ggplot(mean_changes_2 %>% filter(Round %in% c(2,3,4,5)), aes(x = Round, y = Mean_Change, fill = Feedback)) +
+  geom_bar(stat = "identity", position = position_dodge(), color = "black", width = 0.7) +
+  scale_fill_manual(values = c("Feedback_bomb" = "black", "Feedback_no_bomb" = "grey")) +
+  geom_errorbar(aes(ymin = Mean_Change - SE_Change, ymax = Mean_Change + SE_Change),  # Example error margins
+                width = 0.25, position = position_dodge(0.7)) +
+  labs(title = "Immediate Effect of Feedback on Mean Change in Clicks",
+       x = "Condition SRP",
+       y = "Mean Change in Clicks") +
+  theme_minimal() +
+  facet_wrap(~Interaction)+ ### Change here the facet warp variable
+  theme(legend.title = element_blank(), legend.position = "top")
+
+
+
+
+
+
+
+
+
+
+
+
+
+### new 
+df_changes <- filtered_df %>% 
+  arrange(Subject, Round) %>%
+  group_by(Subject) %>%
+  mutate(
+    Percent_Change_Clicks = 100 * (Clicks - lag(Clicks)) / lag(Clicks),
+    Feedback_prev = lag(Feedback)
+  ) %>%
+  filter(!is.na(Percent_Change_Clicks)) %>%
+  ungroup() %>%
+  mutate(Interaction = interaction(Condition_Uncertainty, Condition_SRP, sep = "_"))
+
+mean_changes <- df_changes %>%
+  filter(Feedback_prev != "no feedback") %>%
+  group_by(Feedback_prev, Interaction) %>%
+  summarise(
+    Mean_Change = mean(Percent_Change_Clicks, na.rm = TRUE),
+    SE_Change   = sd(Percent_Change_Clicks, na.rm = TRUE) / sqrt(n()),
+    N           = n(),
+    .groups = "drop"
+  )
+
+# --- Prepare data (assuming df_changes and mean_changes already created) ---
+mean_changes <- mean_changes %>%
+  mutate(
+    # Nicer legend labels
+    Feedback_prev = recode(Feedback_prev,
+                           "Feedback_bomb" = "Feedback: Bomb",
+                           "Feedback_no_bomb" = "Feedback: No Bomb"),
+    
+    # Nicer interaction labels (clean and readable)
+    Interaction = recode(Interaction,
+                         "Ambiguity_High" = "Ambiguity – High SRP",
+                         "Ambiguity_Low"  = "Ambiguity – Low SRP",
+                         "Risk_High"      = "Risk – High SRP",
+                         "Risk_Low"       = "Risk – Low SRP")
+  )
+
+# --- Plot ---
+ggplot(mean_changes, aes(x = Interaction, y = Mean_Change, fill = Feedback_prev)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.7),
+           color = "black", width = 0.7) +
+  geom_errorbar(aes(ymin = Mean_Change - SE_Change,
+                    ymax = Mean_Change + SE_Change),
+                width = 0.25, position = position_dodge(0.7)) +
+  geom_text(aes(
+    label = paste0("N=", N),
+    vjust = ifelse(Mean_Change >= 0, -0.8, 1.5)
+  ),
+  position = position_dodge(width = 0.7),
+  size = 3
+  ) +
+  scale_fill_manual(values = c("Feedback: Bomb" = "black",
+                               "Feedback: No Bomb" = "grey")) +
+  labs(
+    title = "",
+    x = "",
+    y = "Mean % Change in Clicks",
+    fill = NULL
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "top",
+    axis.text.x = element_text(angle = 30, hjust = 1)
+  )
+
+ggsave(
+  filename = "Fig_Feedback_Effect_Clicks.png",  # File name
+  width = 10,       # width in inches
+  height = 5,       # height in inches
+  dpi = 300         # resolution for print-quality figure
+)
+
+#### new appendix 
+library(dplyr)
+library(ggplot2)
+
+# --- Step 1: Compute absolute change from Round 1 for each participant ---
+df_changes <- filtered_df %>%
+  arrange(Subject, Round) %>%
+  group_by(Subject) %>%
+  mutate(
+    # Safely get baseline (Round 1) clicks, fallback = first available round
+    Clicks_Round1 = Clicks[Round == 1][1],
+    Clicks_Round1 = if_else(is.na(Clicks_Round1),
+                            first(Clicks, order_by = Round),
+                            Clicks_Round1),
+    Change_from_R1 = if_else(Round == 1, 0, Clicks - Clicks_Round1)
+  ) %>%
+  ungroup() %>%
+  mutate(
+    Interaction = interaction(Condition_Uncertainty, Condition_SRP, sep = "_")
+  )
+
+# --- Step 2: Aggregate by round, feedback, and interaction ---
+mean_changes_R1 <- df_changes %>%
+  filter(Round != 1 & !is.na(Clicks_Round1)) %>%
+  group_by(Round, Feedback, Interaction) %>%
+  summarise(
+    Mean_Change = mean(Change_from_R1, na.rm = TRUE),
+    SE_Change   = sd(Change_from_R1, na.rm = TRUE) / sqrt(n()),
+    N           = n(),
+    .groups = "drop"
+  )
+
+# --- Step 3: Beautify labels ---
+mean_changes_R1 <- mean_changes_R1 %>%
+  mutate(
+    Feedback = recode(Feedback,
+                      "Feedback_bomb" = "Feedback: Bomb",
+                      "Feedback_no_bomb" = "Feedback: No Bomb"),
+    Interaction = recode(Interaction,
+                         "Ambiguity_High" = "Ambiguity – High SRP",
+                         "Ambiguity_Low"  = "Ambiguity – Low SRP",
+                         "Risk_High"      = "Risk – High SRP",
+                         "Risk_Low"       = "Risk – Low SRP")
+  )
+
+# --- Step 4: Plot ---
+ggplot(mean_changes_R1,
+       aes(x = factor(Round), y = Mean_Change, fill = Feedback)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.7),
+           color = "black", width = 0.7) +
+  geom_errorbar(aes(ymin = Mean_Change - SE_Change,
+                    ymax = Mean_Change + SE_Change),
+                width = 0.25, position = position_dodge(0.7)) +
+  geom_text(aes(label = paste0("N=", N),
+                vjust = ifelse(Mean_Change >= 0, -0.8, 1.5)),
+            position = position_dodge(width = 0.7),
+            size = 3) +
+  scale_fill_manual(values = c("Feedback: Bomb" = "black",
+                               "Feedback: No Bomb" = "grey70")) +
+  labs(
+    title = "",
+    x = "Round",
+    y = "Mean Change in Clicks (relative to Round 1)",
+    fill = "Feedback"
+  ) +
+  facet_wrap(~Interaction) +
+  theme_minimal() +
+  theme(
+    legend.position = "top",
+    legend.title = element_blank(),
+    axis.text.x = element_text(size = 11),
+    axis.title.y = element_text(size = 12),
+    plot.title = element_text(face = "bold", size = 14)
+  )
+
+
+
+
+ggsave(
+  filename = "Change_from_Baseline_Clicks.png",   # file name
+  plot = last_plot(),                             # saves the most recent ggplot                 # optional: set folder path, or omit to save in working directory
+  width = 9,                                      # width in inches (JoEP fits well around 8–9)
+  height = 6,                                     # height in inches
+  dpi = 600                                       # high-resolution for publication
+)
+
+
+
+
+
+
+
+
+## Alterantive 
+
+############################################
+### Figure: Pooled Δ (Ambiguity − Risk)
+############################################
+
+# --- Pool all rounds ---
+summary_pooled <- filtered_df %>%
+  group_by(Condition_SRP, Condition_Uncertainty) %>%
+  summarise(
+    Mean_Clicks = mean(Clicks, na.rm = TRUE),
+    SE_Clicks   = sd(Clicks, na.rm = TRUE) / sqrt(n()),
+    .groups = "drop"
+  )
+
+library(tidyr)
+
+delta_pooled <- summary_pooled %>%
+  pivot_wider(
+    names_from  = Condition_Uncertainty,
+    values_from = c(Mean_Clicks, SE_Clicks)
+  )
+
+delta_pooled <- delta_pooled %>%
+  mutate(
+    Delta_Clicks = Mean_Clicks_Ambiguity - Mean_Clicks_Risk,
+    SE_Delta = sqrt(SE_Clicks_Ambiguity^2 + SE_Clicks_Risk^2)
+  )
+wes_cols <- wes_palette("Darjeeling1", 2, type = "discrete")
+
+############################################
+### Figure: Mean Clicks (All Rounds)
+### Focus: Ambiguity vs Risk within SRP
+############################################
+
+library(dplyr)
+library(ggplot2)
+library(wesanderson)
+
+# --- Pooled summary ---
+summary_pooled <- filtered_df %>%
+  group_by(Condition_Uncertainty, Condition_SRP) %>%
+  summarise(
+    Mean_Clicks = mean(Clicks, na.rm = TRUE),
+    SE_Clicks   = sd(Clicks, na.rm = TRUE) / sqrt(n()),
+    .groups = "drop"
+  )
+
+# --- Wes Anderson palette ---
+wes_cols <- wes_palette("Darjeeling1", 2, type = "discrete")
+
+# --- Plot ---
+plot_pooled <- ggplot(summary_pooled,
+                      aes(x = Condition_Uncertainty,
+                          y = Mean_Clicks,
+                          fill = Condition_SRP)) +
+  geom_col(position = position_dodge(width = 0.7),
+           width = 0.65,
+           color = "grey25") +
+  geom_errorbar(aes(ymin = Mean_Clicks - SE_Clicks,
+                    ymax = Mean_Clicks + SE_Clicks),
+                width = 0.18,
+                position = position_dodge(width = 0.7)) +
+  scale_fill_manual(values = wes_cols,
+                    labels = c("High SRP", "Low SRP")) +
+  labs(
+    x = "Uncertainty Condition",
+    y = "Mean Clicks (All Rounds)",
+    fill = "SRP Condition"
+  ) +
+  theme_classic(base_size = 13) +
+  theme(
+    legend.position = "top",
+    legend.title = element_blank()
+  )
+
+plot_pooled
+
+
+summary_pooled <- filtered_df %>%
+  group_by(Condition_Uncertainty, Condition_SRP) %>%
+  summarise(
+    Mean_Clicks = mean(Clicks, na.rm = TRUE),
+    SE_Clicks   = sd(Clicks, na.rm = TRUE) / sqrt(n()),
+    .groups = "drop"
+  )
+
+
+# High SRP test
+test_high <- wilcox.test(
+  Clicks ~ Condition_Uncertainty,
+  data = filtered_df %>% filter(Condition_SRP == "High")
+)
+
+# Low SRP test
+test_low <- wilcox.test(
+  Clicks ~ Condition_Uncertainty,
+  data = filtered_df %>% filter(Condition_SRP == "Low")
+)
+
+test_high$p.value
+test_low$p.value
+
+star_high <- ifelse(test_high$p.value < .01, "**",
+                    ifelse(test_high$p.value < .05, "*", "ns"))
+
+star_low  <- ifelse(test_low$p.value < .01, "**",
+                    ifelse(test_low$p.value < .05, "*", "ns"))
+
+library(ggplot2)
+library(wesanderson)
+
+wes_cols <- wes_palette("Darjeeling1", 2, type = "discrete")
+
+plot_master <- ggplot(summary_pooled,
+                      aes(x = interaction(Condition_SRP, Condition_Uncertainty),
+                          y = Mean_Clicks,
+                          fill = Condition_Uncertainty)) +
+  geom_col(width = 0.6, color = "grey25") +
+  geom_errorbar(aes(ymin = Mean_Clicks - SE_Clicks,
+                    ymax = Mean_Clicks + SE_Clicks),
+                width = 0.15) +
+  scale_fill_manual(values = wes_cols) +
+  labs(
+    x = "",
+    y = "Mean Clicks (All Rounds)"
+  ) +
+  theme_classic(base_size = 13) +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+plot_master
+############################################
+### Figure: Ambiguity vs Risk by SRP (All Rounds)
+############################################
+
+library(dplyr)
+library(ggplot2)
+library(wesanderson)
+
+# --- Summary over all rounds ---
+summary_all <- filtered_df %>%
+  group_by(Condition_SRP, Condition_Uncertainty, Round) %>%
+  summarise(
+    Mean_Clicks = mean(Clicks, na.rm = TRUE),
+    SE_Clicks   = sd(Clicks, na.rm = TRUE) / sqrt(n()),
+    .groups = "drop"
+  )
+
+# --- Wes Anderson palette ---
+wes_cols <- wes_palette("Darjeeling1", 2, type = "discrete")
+
+# --- Plot ---
+plot_dynamic <- ggplot(summary_all,
+                       aes(x = as.numeric(Round),
+                           y = Mean_Clicks,
+                           color = Condition_Uncertainty,
+                           group = Condition_Uncertainty)) +
+  geom_line(size = 1.1) +
+  geom_point(size = 2.8) +
+  geom_errorbar(aes(ymin = Mean_Clicks - SE_Clicks,
+                    ymax = Mean_Clicks + SE_Clicks),
+                width = 0.15,
+                alpha = 0.7) +
+  scale_color_manual(values = wes_cols,
+                     labels = c("Ambiguity", "Risk")) +
+  facet_wrap(~Condition_SRP) +
+  labs(
+    x = "Round",
+    y = "Mean Clicks",
+    color = "Uncertainty Condition"
+  ) +
+  theme_classic(base_size = 13) +
+  theme(
+    legend.position = "top",
+    legend.title = element_blank(),
+    panel.grid = element_blank()
+  )
+
+plot_dynamic
+
+ggsave(
+  filename = "Figure_Dynamic_SRP_by_Uncertainty.png",
+  plot = plot_dynamic,
+  width = 8,
+  height = 5.5,
+  dpi = 600
+)
+
+############################################
+### Figure: Round 1 Main & Interaction Effects
+############################################
+
+library(dplyr)
+library(ggplot2)
+library(wesanderson)
+library(patchwork)
+
+# --- Filter Round 1 ---
+round1_df <- filtered_df %>%
+  filter(Round == 1)
+
+# --- Compute summary stats helper ---
+summary_fun <- function(data, group_vars) {
+  data %>%
+    group_by(across(all_of(group_vars))) %>%
+    summarise(
+      Mean = mean(Clicks, na.rm = TRUE),
+      SE   = sd(Clicks, na.rm = TRUE) / sqrt(n()),
+      .groups = "drop"
+    ) %>%
+    mutate(
+      CI_low  = Mean - 1.96 * SE,
+      CI_high = Mean + 1.96 * SE
+    )
+}
+
+wes_cols <- wes_palette("Darjeeling1", 2, type = "discrete")
+
+############################################
+### Panel A: Main Effect SRP
+############################################
+
+srp_summary <- summary_fun(round1_df, "Condition_SRP")
+
+plot_A <- ggplot(srp_summary,
+                 aes(x = Condition_SRP,
+                     y = Mean,
+                     fill = Condition_SRP)) +
+  geom_col(width = 0.6, color = "grey25") +
+  geom_errorbar(aes(ymin = CI_low, ymax = CI_high),
+                width = 0.15, size = 0.6) +
+  scale_fill_manual(values = wes_cols,
+                    labels = c("High SRP", "Low SRP")) +
+  labs(x = "SRP Condition",
+       y = "Mean Clicks",
+       title = "A. SRP Main Effect") +
+  theme_classic(base_size = 12) +
+  theme(legend.position = "none")
+
+############################################
+### Panel B: Main Effect Uncertainty
+############################################
+
+unc_summary <- summary_fun(round1_df, "Condition_Uncertainty")
+
+plot_B <- ggplot(unc_summary,
+                 aes(x = Condition_Uncertainty,
+                     y = Mean,
+                     fill = Condition_Uncertainty)) +
+  geom_col(width = 0.6, color = "grey25") +
+  geom_errorbar(aes(ymin = CI_low, ymax = CI_high),
+                width = 0.15, size = 0.6) +
+  scale_fill_manual(values = wes_cols) +
+  labs(x = "Uncertainty Condition",
+       y = "Mean Clicks",
+       title = "B. Uncertainty Main Effect") +
+  theme_classic(base_size = 12) +
+  theme(legend.position = "none")
+
+############################################
+### Panel C: Interaction (2×2)
+############################################
+
+int_summary <- summary_fun(round1_df,
+                           c("Condition_Uncertainty", "Condition_SRP"))
+
+plot_C <- ggplot(int_summary,
+                 aes(x = Condition_Uncertainty,
+                     y = Mean,
+                     fill = Condition_SRP)) +
+  geom_col(position = position_dodge(width = 0.7),
+           width = 0.6,
+           color = "grey25") +
+  geom_errorbar(aes(ymin = CI_low, ymax = CI_high),
+                position = position_dodge(width = 0.7),
+                width = 0.15,
+                size = 0.6) +
+  scale_fill_manual(values = wes_cols,
+                    labels = c("High SRP", "Low SRP")) +
+  labs(x = "Uncertainty Condition",
+       y = "Mean Clicks",
+       fill = "SRP Condition",
+       title = "C. SRP × Uncertainty Interaction") +
+  theme_classic(base_size = 12) +
+  theme(legend.position = "top",
+        legend.title = element_blank())
+
+############################################
+### Combine Panels
+############################################
+
+final_plot <- plot_A + plot_B + plot_C +
+  plot_layout(ncol = 3)
+
+final_plot
+
+ggsave(
+  filename = "Figure_Round1_ABC.png",
+  plot = final_plot,
+  width = 14,
+  height = 4.5,
+  dpi = 600
+)
+
+
+
+library(dplyr)
+library(ggplot2)
+library(patchwork)  # optional, to combine plots later
+
+# --- Step 1: Compute change from Round 1 for each participant ---
+df_changes <- filtered_df %>%
+  arrange(Subject, Round) %>%
+  group_by(Subject) %>%
+  mutate(
+    # Safely extract Round 1 baseline clicks (fallback = first round)
+    Clicks_Round1 = Clicks[Round == 1][1],
+    Clicks_Round1 = if_else(is.na(Clicks_Round1),
+                            first(Clicks, order_by = Round),
+                            Clicks_Round1),
+    Change_from_R1 = if_else(Round == 1, 0, Clicks - Clicks_Round1)
+  ) %>%
+  ungroup() %>%
+  mutate(
+    Interaction = interaction(Condition_Uncertainty, Condition_SRP, sep = "_")
+  )
+
+# --- Step 2: Aggregate by round, feedback, and interaction ---
+mean_changes_R1 <- df_changes %>%
+  filter(Round != 1 & !is.na(Clicks_Round1)) %>%
+  group_by(Round, Feedback, Condition_Uncertainty, Condition_SRP) %>%
+  summarise(
+    Mean_Change = mean(Change_from_R1, na.rm = TRUE),
+    SE_Change   = sd(Change_from_R1, na.rm = TRUE) / sqrt(n()),
+    N           = n(),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    Feedback = recode(Feedback,
+                      "Feedback_bomb" = "Feedback: Bomb",
+                      "Feedback_no_bomb" = "Feedback: No Bomb")
+  )
+
+# --- Step 3: Define plotting function for each uncertainty condition ---
+plot_by_uncertainty <- function(data, condition_label) {
+  ggplot(data, aes(x = factor(Round), y = Mean_Change, fill = Feedback)) +
+    geom_bar(stat = "identity", position = position_dodge(width = 0.7),
+             color = "black", width = 0.7) +
+    geom_errorbar(aes(ymin = Mean_Change - SE_Change,
+                      ymax = Mean_Change + SE_Change),
+                  width = 0.25, position = position_dodge(0.7)) +
+    geom_text(aes(label = paste0("N=", N),
+                  vjust = ifelse(Mean_Change >= 0, -0.8, 1.5)),
+              position = position_dodge(width = 0.7),
+              size = 3) +
+    scale_fill_manual(values = c("Feedback: Bomb" = "black",
+                                 "Feedback: No Bomb" = "grey70")) +
+    labs(
+      
+      x = "Round",
+      y = "Mean Change in Clicks (relative to Round 1)",
+      fill = "Feedback"
+    ) +
+    facet_wrap(~Condition_SRP, labeller = labeller(Condition_SRP = c(High = "High SRP", Low = "Low SRP"))) +
+    theme_minimal() +
+    theme(
+      legend.position = "top",
+      legend.title = element_blank(),
+      axis.text.x = element_text(size = 11),
+      axis.title.y = element_text(size = 12),
+      plot.title = element_text(face = "bold", size = 14)
+    )
+}
+
+# --- Step 4: Create separate plots ---
+plot_ambiguity <- plot_by_uncertainty(filter(mean_changes_R1, Condition_Uncertainty == "Ambiguity"), "Ambiguity")
+plot_risk      <- plot_by_uncertainty(filter(mean_changes_R1, Condition_Uncertainty == "Risk"), "Risk")
+
+
+# --- Step 6: Save individually ---
+ggsave("Change_from_Baseline_Ambiguity.png", plot = plot_ambiguity,
+       width = 8, height = 5, dpi = 600)
+
+
+ggsave("Change_from_Baseline_Risk.png", plot = plot_risk,
+       width = 8, height = 5, dpi = 600)
+
+
+
+
+
+########## Regression analaysis ###############################################
+
+
+
+# Subsetting the dataset by rounds for separate analyses
+r1 = filtered_df %>% filter(Round == 1)
+r2 = filtered_df %>% filter(Round == 2)
+r3 = filtered_df %>% filter(Round == 3)
+r4 = filtered_df %>% filter(Round == 4)
+r5 = filtered_df %>% filter(Round == 5)
+
+
+# Define the regression models
+# Model without feedback variable for Round 1
+model_formula1 <- Clicks ~ Condition_SRP + Condition_Uncertainty + Risk_attitude + Female + Age + Monthly_Income
+# Model with feedback variable for Rounds 2-5
+model_formula <- Clicks ~ Condition_SRP + Condition_Uncertainty + Risk_attitude + Female + Age + Monthly_Income + Feedback
+
+
+# Fit Poisson regression models for each round with the specified formulas
+# 'atmean=T' specifies the estimation at mean values of covariates
+# 'robust=T' requests robust standard errors
+reg1.1 <- poissonmfx(data = r1, model_formula1, atmean = T, robust = T)
+reg1.2 <- poissonmfx(data = r2, model_formula, atmean = T, robust = T)
+reg1.3 <- poissonmfx(data = r3, model_formula, atmean = T, robust = T)
+reg1.4 <- poissonmfx(data = r4, model_formula, atmean = T, robust = T)
+reg1.5 <- poissonmfx(data = r5, model_formula, atmean = T, robust = T)
+
+# Extract coefficients and standard errors for table creation
+coef = list(reg1.1$mfxest[, 1], reg1.2$mfxest[, 1], reg1.3$mfxest[, 1], reg1.4$mfxest[, 1], reg1.5$mfxest[, 1])
+se = list(reg1.1$mfxest[, 2], reg1.2$mfxest[, 2], reg1.3$mfxest[, 2], reg1.4$mfxest[, 2], reg1.5$mfxest[, 2])
+
+
+
+###### Do the same with OLS as robustness check 
+
+# Fit OLS models for each round and calculate heteroskedasticity-robust standard errors (HC1)
+reg1.1_ols <- lm(model_formula1, data = r1)
+robust_se1.1 <- sqrt(diag(vcovHC(reg1.1_ols, type = "HC1")))
+
+# Repeat for each subsequent round
+reg1.2_ols <- lm(model_formula, data = r2)
+robust_se1.2 <- sqrt(diag(vcovHC(reg1.2_ols, type = "HC1")))
+
+# Continue the pattern for rounds 3, 4, and 5
+reg1.3_ols <- lm(model_formula, data = r3)
+robust_se1.3 <- sqrt(diag(vcovHC(reg1.3_ols, type = "HC1")))
+
+reg1.4_ols <- lm(model_formula, data = r4)
+robust_se1.4 <- sqrt(diag(vcovHC(reg1.4_ols, type = "HC1")))
+
+reg1.5_ols <- lm(model_formula, data = r5)
+robust_se1.5 <- sqrt(diag(vcovHC(reg1.5_ols, type = "HC1")))
+
+########### Generate the latex table ########################################
+
+your_table <- stargazer(
+  reg1.1_ols, reg1.2_ols, reg1.3_ols, reg1.4_ols, reg1.5_ols,
+  type = "text",  # Change to 'latex' for LaTeX output, 'text' for console output
+  coef = list(coef(reg1.1_ols), coef(reg1.2_ols), coef(reg1.3_ols), coef(reg1.4_ols), coef(reg1.5_ols)),
+  se = list(robust_se1.1, robust_se1.2, robust_se1.3, robust_se1.4, robust_se1.5))
+
+
+
+
+
+
+############################ Analysis for the overall regression with all rounds 
+
+# Model definitions incorporating interactions and feedback
+model_1 <- Clicks ~ Condition_SRP + Condition_Uncertainty + Feedback + Round
+model_2 <- Clicks ~ Condition_SRP:Condition_Uncertainty + Feedback + Round
+
+# Fit Poisson regression models with robust standard errors for overall data
+reg1.1 <- poissonmfx(data = filtered_df, formula = model_1, atmean = TRUE, robust = TRUE )
+reg1.2 <- poissonmfx(data = filtered_df, formula = model_2, atmean = TRUE, robust = TRUE)
+
+names(filtered_df)
+
+
+
+# OLS regression models with heteroskedasticity-robust standard errors
+ols1.1 <- lm(formula = model_1, data = filtered_df);summary(ols1.1)
+robust_se_ols1.1 <- sqrt(diag(vcovHC(ols1.1, type = "HC1")))
+
+
+ols1.2 <- lm(formula = model_2, data = filtered_df)
+robust_se_ols1.2 <- sqrt(diag(vcovHC(ols1.2, type = "HC1")))
+
+
+
+
+### Regression for the belief model ###########################################
+
+# Filtering data for ambiguity condition and calculating average beliefs
+ambiguity_df <- filtered_df %>% filter(Condition_Uncertainty == "Ambiguity")
+ambiguity_df$average_belief <- (ambiguity_df$Belief_0 * 0 + ambiguity_df$Belief_1 * 1 + ambiguity_df$Belief_2 * 2) / 100
+
+# Fitting linear models to assess the influence of SRP, feedback, and demographics on beliefs
+belief_reg_overall <- lm(average_belief ~ Condition_SRP + Feedback + Age + Female + Round + Risk_attitude, data = ambiguity_df)
+belief_reg_zero <- lm(Belief_0 ~ Condition_SRP + Feedback + Age + Female + Round + Risk_attitude, data = ambiguity_df)
+belief_reg_one <- lm(Belief_1 ~ Condition_SRP + Feedback + Age + Female + Round + Risk_attitude, data = ambiguity_df)
+belief_reg_two <- lm(Belief_2 ~ Condition_SRP + Feedback + Age + Female + Round + Risk_attitude, data = ambiguity_df)
+
+
+### Inequality aversion model #################################################
+
+# Prepare data with inequality aversion variables
+filtered_df$disadvantageous_ineq = filtered_df$UG_P_B
+filtered_df$disadvantageous_ineq_sq = (filtered_df$UG_P_B)^2
+filtered_df$advantageous_ineq = filtered_df$UG_Person_A_1
+filtered_df$advantageous_ineq_sq = (filtered_df$UG_Person_A_1)^2
+
+# Subset data by SRP condition for focused analysis
+SRP_low_df = filtered_df %>% filter(Condition_SRP == "Low")
+SRP_High_df = filtered_df %>% filter(Condition_SRP == "High")
+
+# Poisson and linear models to explore clicks in relation to inequality variables
+reg1.6.l <- poissonmfx(data = SRP_low_df, formula = Clicks ~ Condition_Uncertainty + Round + Feedback + Risk_attitude + Female + Age + disadvantageous_ineq + disadvantageous_ineq_sq + advantageous_ineq + advantageous_ineq_sq, robust = TRUE, atmean = TRUE)
+reg1.6.h <- poissonmfx(data = SRP_High_df, formula = Clicks ~ Condition_Uncertainty + Round + Feedback + Risk_attitude + Female + Age + disadvantageous_ineq + disadvantageous_ineq_sq + advantageous_ineq + advantageous_ineq_sq, robust = TRUE, atmean = TRUE)
+
+
+preg1.6.l<- lm(data=SRP_low_df,Clicks ~ Condition_Uncertainty + Round +Feedback+Risk_attitude+Female+Age + disadvantageous_ineq+disadvantageous_ineq_sq+advantageous_ineq+advantageous_ineq_sq)
+preg1.6.h<- lm(data=SRP_High_df,Clicks ~ Condition_Uncertainty + Round +Feedback+Risk_attitude+Female+Age + disadvantageous_ineq+disadvantageous_ineq_sq+advantageous_ineq+advantageous_ineq_sq )
+
+
+coef = list(reg1.6.l$mfxest[,1],
+            reg1.6.h$mfxest[,1])
+
+
+cov1         <- vcovHC(preg1.6.l, type = "HC1")
+robust_se    <- sqrt(diag(cov1))
+
+cov2         <- vcovHC(preg1.6.h, type = "HC1")
+robust_se2    <- sqrt(diag(cov2))
+
+
+se = list(reg1.6.l$mfxest[,2],
+          reg1.6.h$mfxest[,2],
+          robust_se,
+          robust_se2)
+
+
+
+social_pref <- stargazer( reg1.6.l$fit,reg1.6.h$fit,preg1.6.l,preg1.6.h, type="text",
+                          coef = coef,
+                          se = se,
+                          column.labels = c("Low","High","Low","High"))
+
+
+
+
+
+# library(haven)  
+# write_dta(filtered_df,"Replication_data_STATA_SRP.dta")  
+
+fixed_vars <- c("UG_Person_A_1", "UG_Person_A_2", "UG_P_B", "Risk_Task_Answer", "Age", 
+                "Sex", "EDU", "Income_1")
+
+data$UG_Person_A_1 <- factor(data$UG_Person_A_1)
+data$UG_Person_A_2 <- factor(data$UG_Person_A_2)
+data$UG_P_B <- factor(data$UG_P_B)
+data$Risk_Task_Answer <- factor(data$Risk_Task_Answer)
+data$Sex <- factor(data$Sex)
+data$EDU <- factor(data$EDU)
+
+
+
+# Factor conversion for categorical variables
+data$risk <- factor(data$risk, labels = c("Ambiguity", "Risk"))
+data$highAmountOfMoney <- factor(data$highAmountOfMoney, labels = c("Low", "High"))
+
+strata <- c("risk", "highAmountOfMoney")
+
+table1_fixed <- CreateTableOne(vars = fixed_vars, data = data, strata = strata, test = TRUE)
+print(table1_fixed, quote = FALSE, noSpaces = TRUE)
+
+### robustness check 
+
+
+# Reviewer 2 asked for nonparametric tests (Wilcoxon / Mann-Whitney, permutation, KS).
+# These tests do not rely on parametric distributional assumptions and directly compare medians/distributions.
+
+# 1. Wilcoxon rank-sum tests (a.k.a. Mann-Whitney U test)
+# Compare Clicks between High vs Low SRP, separately for Risk and Ambiguity
+wilcox_risk  <- wilcox.test(Clicks ~ Condition_SRP, data = filtered_df %>% filter(Condition_Uncertainty == "Risk"))
+wilcox_amb   <- wilcox.test(Clicks ~ Condition_SRP, data = filtered_df %>% filter(Condition_Uncertainty == "Ambiguity"))
+wilcox_risk
+wilcox_amb
+# 2. Kolmogorov-Smirnov tests
+# Test for distributional differences (not just medians) between High vs Low SRP
+ks_risk <- ks.test(
+  filtered_df$Clicks[filtered_df$Condition_Uncertainty == "Risk" & filtered_df$Condition_SRP == "High"],
+  filtered_df$Clicks[filtered_df$Condition_Uncertainty == "Risk" & filtered_df$Condition_SRP == "Low"]
+)
+ks_amb <- ks.test(
+  filtered_df$Clicks[filtered_df$Condition_Uncertainty == "Ambiguity" & filtered_df$Condition_SRP == "High"],
+  filtered_df$Clicks[filtered_df$Condition_Uncertainty == "Ambiguity" & filtered_df$Condition_SRP == "Low"]
+)
+
+library(coin)
+wilcox_SRP_strat <- wilcox_test(
+  Clicks ~ Condition_SRP | Condition_Uncertainty,
+  data = filtered_df,
+  alternative = "greater",
+  distribution = approximate(B = 10000) # permutation p-value
+)
+wilcox_SRP_strat
+
+wilcox_simple  <- wilcox.test(Clicks ~ Condition_SRP, data = filtered_df)
+wilcox_simple
+
+
+wilcox_AMB_strat <- wilcox_test(
+  Clicks ~ Condition_Uncertainty |Condition_SRP ,
+  data = filtered_df,
+  alternative = "greater",
+  distribution = approximate(B = 10000) # permutation p-value
+)
+wilcox_AMB_strat
+
+
+wilcox_simple  <- wilcox.test(Clicks ~ Condition_Uncertainty, data = filtered_df)
+wilcox_simple
+
+
+
+
+# Ambiguity only
+amb <- subset(filtered_df, Condition_Uncertainty == "Ambiguity")
+wilcox_amb <- wilcox.test(Clicks ~ Condition_SRP, data = amb,
+                          alternative = "greater", exact = FALSE, conf.int = TRUE)
+
+library(coin)
+wilcox_amb_perm <- wilcox_test(Clicks ~ Condition_SRP, data = amb,
+                               alternative = "greater",
+                               distribution = approximate(B = 10000))
+
+# Risk only
+risk <- subset(filtered_df, Condition_Uncertainty == "Risk")
+wilcox_risk <- wilcox.test(Clicks ~ Condition_SRP, data = risk,
+                           alternative = "greater", exact = FALSE, conf.int = TRUE)
+
+wilcox_risk_perm <- wilcox_test(Clicks ~ Condition_SRP, data = risk,
+                                alternative = "greater",
+                                distribution = approximate(B = 10000))
+
+###########################################
+### SIMPLE MEDIATION MODEL (JoEP)
+### Ambiguity condition only
+### High SRP → (Belief: fewer bombs) → more Clicks
+###########################################
+
+library(dplyr)
+library(mediation)
+
+# ----------------------------------------
+# 1. Prepare data
+# ----------------------------------------
+df_amb <- filtered_df %>%
+  filter(Condition_Uncertainty == "Ambiguity") %>%
+  mutate(
+    exp_bombs = (0 * Belief_0 + 1 * Belief_1 + 2 * Belief_2) / 100,
+    p_low_bombs = (Belief_0 + Belief_1) / 100
+  ) %>%
+  filter(!is.na(Condition_SRP), !is.na(exp_bombs), !is.na(Clicks)) %>%
+  droplevels() %>%
+  mutate(Condition_SRP = factor(Condition_SRP, levels = c("Low", "High")))
+
+# ----------------------------------------
+# 2. Simple models
+# ----------------------------------------
+
+# (a) Belief model: SRP → Beliefs
+belief_model <- lm(exp_bombs ~ Condition_SRP, data = df_amb)
+summary(belief_model)
+# Expect negative coefficient on SRPLow → High SRP expect fewer bombs
+
+# (b) Reduced form: SRP → Clicks
+clicks_model <- lm(Clicks ~ Condition_SRP, data = df_amb)
+summary(clicks_model)
+# Expect negative coefficient on SRPLow → High SRP take more risk (more clicks)
+
+# (c) Full model: SRP + Beliefs → Clicks
+clicks_model_med <- lm(Clicks ~ Condition_SRP + exp_bombs, data = df_amb)
+summary(clicks_model_med)
+# Expect exp_bombs negative; SRP coefficient drops when beliefs included
+
+# ----------------------------------------
+# 3. Mediation analysis
+# ----------------------------------------
+set.seed(1234)
+med_results <- mediate(
+  model.m = belief_model,
+  model.y = clicks_model_med,
+  treat = "Condition_SRP",
+  mediator = "exp_bombs",
+  treat.value = "High",
+  control.value = "Low",
+  robustSE = TRUE,
+  sims = 2000
+)
+summary(med_results)
+
+# ----------------------------------------
+# 4. Optional robustness with alternative mediator
+# ----------------------------------------
+set.seed(1234)
+med_results_safe <- mediate(
+  model.m = lm(p_low_bombs ~ Condition_SRP, data = df_amb),
+  model.y = lm(Clicks ~ Condition_SRP + p_low_bombs, data = df_amb),
+  treat = "Condition_SRP",
+  mediator = "p_low_bombs",
+  treat.value = "High",
+  control.value = "Low",
+  robustSE = TRUE,
+  sims = 2000
+)
+summary(med_results_safe)
+
+
+library(semPlot)
+library(lavaan)
+
+# Define simple mediation model for plotting
+model_path <- '
+  exp_bombs ~ a*Condition_SRP
+  Clicks ~ c_prime*Condition_SRP + b*exp_bombs
+  ab := a*b
+  total := c_prime + (a*b)
+'
+
+fit_path <- sem(model_path, data = df_amb)
+semPaths(
+  fit_path,
+  whatLabels = "est",
+  layout = "tree",
+  edge.label.cex = 1.2,
+  sizeMan = 8,
+  residuals = FALSE,
+  edge.color = "black",
+  edge.label.position = 0.55,
+  label.prop = 0.8,
+  title = FALSE,
+  nCharNodes = 0
+)
+
+
+################################################################################
+#############################################
+# Bayesian Updating Model (Ambiguity only)
+# Tests whether participants update beliefs
+# and behavior differently depending on SRP.
+#############################################
+
+# --- 0. Load packages ---
+library(dplyr)
+library(lmtest)
+library(sandwich)
+
+# --- 1. Prepare data: Ambiguity condition only ---
+df_amb <- filtered_df %>%
+  filter(Condition_Uncertainty == "Ambiguity") %>%
+  mutate(
+    # Convert beliefs (in %) to probabilities
+    pi0 = Belief_0 / 100,
+    pi1 = Belief_1 / 100,
+    pi2 = Belief_2 / 100,
+    
+    # Expected number of bombs (E[s])
+    exp_bombs = (0 * Belief_0 + 1 * Belief_1 + 2 * Belief_2) / 100,
+    
+    # Observed outcome at end of round (1 if bomb clicked)
+    bomb_occured = ifelse(Feedback == "Feedback_bomb", 1, 0)
+  )
+
+# --- 2. Define likelihood and expected bomb probability functions ---
+safe_prob <- function(s, k, N = 100) {
+  # Probability that all k clicks are safe if there are s bombs
+  if (k > (N - s)) return(0)
+  choose(N - s, k) / choose(N, k)
+}
+
+expected_bomb_prob_mixture <- function(pi0, pi1, pi2, k, N = 100) {
+  # Mixture over states s = 0, 1, 2 weighted by beliefs
+  p_safe0 <- safe_prob(0, k, N)
+  p_safe1 <- safe_prob(1, k, N)
+  p_safe2 <- safe_prob(2, k, N)
+  p_safe  <- pi0 * p_safe0 + pi1 * p_safe1 + pi2 * p_safe2
+  1 - p_safe   # expected probability of at least one bomb
+}
+
+# --- 3. Compute prediction error ("surprise") ---
+df_amb <- df_amb %>%
+  rowwise() %>%
+  mutate(
+    exp_p_bomb = expected_bomb_prob_mixture(pi0, pi1, pi2, k = Clicks, N = 100),
+    surprise   = bomb_occured - exp_p_bomb   # prediction error
+    # > 0: outcome worse than expected, < 0: safer than expected
+  ) %>%
+  ungroup() %>%
+  arrange(Subject, Round)
+
+df_amb$exp_p_bomb
+
+
+# --- 4. Create next-round deltas (beliefs and clicks) ---
+panel <- df_amb %>%
+  group_by(Subject) %>%
+  arrange(Round, .by_group = TRUE) %>%
+  mutate(
+    exp_bombs_next = lead(exp_bombs),
+    Clicks_next    = lead(Clicks),
+    # Deltas from t to t+1
+    d_exp_bombs    = exp_bombs_next - exp_bombs,
+    d_clicks       = Clicks_next - Clicks
+  ) %>%
+  ungroup() %>%
+  filter(!is.na(d_exp_bombs), !is.na(d_clicks))
+
+# --- 5. Belief updating model ---
+# Tests whether feedback surprise affects belief change (Bayesian learning)
+# and whether this depends on SRP (motivated reasoning hypothesis).
+belief_model <- lm(d_exp_bombs ~ surprise * Condition_SRP + factor(Round), data = panel)
+belief_vcov  <- sandwich::vcovCL(belief_model, cluster = ~ Subject)
+belief_res   <- coeftest(belief_model, vcov = belief_vcov)
+print(belief_res)
+
+# Interpretation:
+# surprise coefficient (β1) > 0 → Bayesian updating (more pessimistic after bombs)
+# interaction (β2) significant → motivated updating (SRP moderates learning)
+
+# --- 6. Behavioral adjustment model ---
+# Tests whether feedback affects change in risk-taking (clicks)
+# and whether SRP moderates this adjustment.
+behavior_model <- lm(d_clicks ~ surprise * Condition_SRP + Clicks + factor(Round), data = panel)
+behavior_vcov  <- sandwich::vcovCL(behavior_model, cluster = ~ Subject)
+behavior_res   <- coeftest(behavior_model, vcov = behavior_vcov)
+print(behavior_res)
+
+# Interpretation:
+# surprise coefficient (δ1) < 0 → risk reduction after unexpected bombs
+# interaction (δ2) significant → SRP moderates behavioral adjustment
+
+# --- 7. Optional visualization ---
+library(ggplot2)
+
+# Belief updating curve
+ggplot(panel, aes(x = surprise, y = d_exp_bombs, color = Condition_SRP)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "lm", se = TRUE) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(
+    x = "Surprise_t (Bomb_t - Expected Bomb Prob_t)",
+    y = "Δ Expected bombs (t+1 - t)",
+    title = "Belief Updating by Surprise (Ambiguity only)"
+  ) +
+  theme_minimal()
+
+# Risk adjustment curve
+ggplot(panel, aes(x = surprise, y = d_clicks, color = Condition_SRP)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "lm", se = TRUE) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(
+    x = "Surprise_t (Bomb_t - Expected Bomb Prob_t)",
+    y = "Δ Clicks (t+1 - t)",
+    title = "Risk Adjustment by Surprise (Ambiguity only)"
+  ) +
+  theme_minimal()
+
+library(dplyr)
+
+library(ggplot2)
+
+library(dplyr)
+library(ggplot2)
+
+# --- Categorize feedback surprise direction and summarize ---
+panel_clicks <- panel %>%
+  mutate(
+    surprise_dir = case_when(
+      surprise > 0  ~ "Unexpected Bomb (worse)",
+      surprise <= 0 ~ "Safer than Expected"
+    )
+  ) %>%
+  group_by(Condition_SRP, surprise_dir) %>%
+  summarise(
+    mean_d_clicks = mean(d_clicks, na.rm = TRUE),
+    se_d_clicks   = sd(d_clicks, na.rm = TRUE) / sqrt(n()),
+    N             = n(),
+    .groups = "drop"
+  )
+
+# --- Plot ---
+ggplot(panel_clicks, aes(x = surprise_dir, y = mean_d_clicks, fill = Condition_SRP)) +
+  geom_col(position = position_dodge(width = 0.7), width = 0.6, color = "black") +
+  geom_errorbar(aes(ymin = mean_d_clicks - se_d_clicks,
+                    ymax = mean_d_clicks + se_d_clicks),
+                width = 0.15, position = position_dodge(width = 0.7)) +
+  geom_text(
+    aes(
+      label = paste0("N=", N),
+      vjust = ifelse(mean_d_clicks >= 0, -0.8, 1.5)
+    ),
+    position = position_dodge(width = 0.7),
+    size = 3
+  ) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  scale_fill_manual(
+    values = c("High" = "black", "Low" = "grey70"),
+    labels = c("High SRP", "Low SRP")
+  ) +
+  labs(
+    x = "",
+    y = "Change in Clicks (Δ Risk-Taking)",
+    title = "",
+    fill = "SRP Condition"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    legend.position = "top",
+    legend.title = element_blank(),
+    axis.text.x = element_text(size = 12),
+    axis.title.y = element_text(size = 13),
+    plot.title = element_text(face = "bold", size = 14),
+    panel.grid.minor = element_blank()
+  )
+
+
+
+ggsave(
+  filename = "Behavioral updating.png",  # File name
+  width = 10,       # width in inches
+  height = 5,       # height in inches
+  dpi = 300         # resolution for print-quality figure
+)
+
+
+library(ggplot2)
+library(patchwork)  # install.packages("patchwork")
+
+
+panel <- panel %>%
+  mutate(
+    surprise_dir = case_when(
+      surprise > 0  ~ "Unexpected bomb (worse)",
+      surprise <= 0 ~ "Safer than expected"
+    )
+  )
+
+# Check that it worked
+table(panel$surprise_dir, panel$Condition_SRP)
+
+# --- 2. Run separate regressions by feedback direction ---
+# (a) Safer than expected
+model_safer <- lm(d_clicks ~ Condition_SRP + Clicks,
+                  data = subset(panel, surprise_dir == "Safer than expected"))
+summary(model_safer)
+
+# (b) Unexpected bomb (worse)
+model_worse <- lm(d_clicks ~ Condition_SRP + Clicks,
+                  data = subset(panel, surprise_dir == "Unexpected bomb (worse)"))
+summary(model_worse)
+
+
+
+#####################
+library(dplyr)
+library(fixest)   # for clustered SEs and interaction plotting
+library(ggplot2)
+
+# Prepare feedback variable (1 = bomb, 0 = no bomb)
+df_reg <- filtered_df %>%
+  arrange(Subject, Round) %>%
+  group_by(Subject) %>%
+  mutate(
+    Feedback_prev = lag(Feedback),
+    Feedback_prev_bin = if_else(Feedback_prev == "Feedback_bomb", 1, 0),
+    Delta_Clicks = Clicks - lag(Clicks)  # or use your Percent_Change_Clicks
+  ) %>%
+  ungroup() %>%
+  filter(!is.na(Delta_Clicks)) %>%
+  mutate(
+    Ambiguity = if_else(Condition_Uncertainty == "Ambiguity", 1, 0),
+    High_SRP  = if_else(Condition_SRP == "High", 1, 0)
+  )
+
+# Regression with interaction terms
+model_feedback <- feols(
+  Delta_Clicks ~ Feedback_prev_bin * Ambiguity * High_SRP,
+  cluster = ~Subject,   # cluster SEs at participant level
+  data = df_reg
+)
+
+summary(model_feedback)
+
+# Refit for visualization only
+model_feedback_lm <- lm(
+  Delta_Clicks ~ Feedback_prev_bin * Ambiguity * High_SRP,
+  data = df_reg
+)
+
+summary(model_feedback_lm)
+
+
+
+
+
+
