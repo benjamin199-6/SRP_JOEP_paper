@@ -178,35 +178,46 @@ df_changes <- analysis_data %>%
   arrange(Subject, Round) %>%
   group_by(Subject) %>%
   mutate(
-    Percent_Change_Clicks =
-      100 * (Clicks - lag(Clicks)) / lag(Clicks),
-    Feedback_prev = lag(Feedback)
+    Clicks_lag = lag(Clicks),
+    Feedback_prev = lag(Feedback),
+    
+    # Safe percentage change (avoid division by zero)
+    Percent_Change_Clicks = dplyr::if_else(
+      Clicks_lag > 0,
+      100 * (Clicks - Clicks_lag) / Clicks_lag,
+      NA_real_
+    )
   ) %>%
   ungroup() %>%
-  filter(!is.na(Percent_Change_Clicks),
-         Feedback_prev != "no feedback") %>%
+  filter(
+    !is.na(Percent_Change_Clicks),
+    Feedback_prev != "no feedback"
+  ) %>%
   mutate(
-    Interaction =
-      interaction(Condition_Uncertainty,
-                  Condition_SRP,
-                  sep = "_")
+    Interaction = interaction(
+      Condition_Uncertainty,
+      Condition_SRP,
+      sep = "_"
+    )
   )
 
 mean_changes <- df_changes %>%
   group_by(Feedback_prev, Interaction) %>%
   summarise(
-    Mean_Change = mean(Percent_Change_Clicks),
-    SE_Change = sd(Percent_Change_Clicks)/sqrt(n()),
-    N = n(),
+    Mean_Change = mean(Percent_Change_Clicks, na.rm = TRUE),
+    SE_Change   = sd(Percent_Change_Clicks, na.rm = TRUE) / sqrt(n()),
+    N = dplyr::n(),
     .groups = "drop"
   ) %>%
   mutate(
-    Feedback_prev = recode(
+    # Explicit namespace prevents recode conflicts
+    Feedback_prev = dplyr::recode(
       Feedback_prev,
-      "Feedback_bomb" = "Feedback: Bomb",
+      "Feedback_bomb"    = "Feedback: Bomb",
       "Feedback_no_bomb" = "Feedback: No Bomb"
     ),
-    Interaction = recode(
+    
+    Interaction = dplyr::recode(
       Interaction,
       "Ambiguity_High" = "Ambiguity – High SRP",
       "Ambiguity_Low"  = "Ambiguity – Low SRP",
@@ -214,6 +225,8 @@ mean_changes <- df_changes %>%
       "Risk_Low"       = "Risk – Low SRP"
     )
   )
+
+feedback_cols <- wes_palette("Moonrise2", 2, type = "discrete")
 
 p_feedback <- ggplot(mean_changes,
                      aes(x = Interaction,
@@ -247,7 +260,7 @@ geom_text(
   size = 3
 ) +
   
-  scale_fill_manual(values = wes_cols) +
+  scale_fill_manual(values = feedback_cols) +
   
   labs(
     x = NULL,
@@ -429,6 +442,7 @@ ggsave(
 # 6. APPENDIX — Change relative to Round 1
 # ---------------------------------------------------------------------------
 feedback_cols <- wes_palette("Moonrise2", 2, type = "discrete")
+
 names(feedback_cols) <- c(
   "Feedback: Bomb",
   "Feedback: No Bomb"
@@ -446,7 +460,6 @@ df_changes_R1 <- analysis_data %>%
   filter(Round != 1)
 
 
-
 mean_changes_R1 <- df_changes_R1 %>%
   group_by(
     Round,
@@ -456,129 +469,141 @@ mean_changes_R1 <- df_changes_R1 %>%
   ) %>%
   summarise(
     Mean_Change = mean(Change_from_R1, na.rm = TRUE),
-    SE_Change   = sd(Change_from_R1, na.rm = TRUE)/sqrt(n()),
-    N           = n(),
+    SE_Change   = sd(Change_from_R1, na.rm = TRUE)/sqrt(dplyr::n()),
+    N           = dplyr::n(),
     .groups = "drop"
   ) %>%
   mutate(
-    Feedback = recode(
+    # SAFE recoding (no masking possible)
+    Feedback = dplyr::case_match(
       Feedback,
-      "Feedback_bomb"    = "Feedback: Bomb",
-      "Feedback_no_bomb" = "Feedback: No Bomb"
+      "Feedback_bomb"    ~ "Feedback: Bomb",
+      "Feedback_no_bomb" ~ "Feedback: No Bomb"
     )
   )
+
 
 mean_changes_ambiguity <- mean_changes_R1 %>%
   filter(Condition_Uncertainty == "Ambiguity")
 
 p_ambiguity <- ggplot(
   mean_changes_ambiguity,
-  aes(x = factor(Round),
-      y = Mean_Change,
-      fill = Feedback)
+  aes(
+    x = factor(Round),
+    y = Mean_Change,
+    fill = Feedback
+  )
 ) +
-  geom_col(position = position_dodge(.7),
-           width = .65,
-           color = NA) +
-  
+  geom_col(
+    position = position_dodge(.7),
+    width = .65
+  ) +
   geom_errorbar(
-    aes(ymin = Mean_Change - SE_Change,
-        ymax = Mean_Change + SE_Change),
+    aes(
+      ymin = Mean_Change - SE_Change,
+      ymax = Mean_Change + SE_Change
+    ),
     width = .18,
     alpha = .4,
     position = position_dodge(.7)
   ) +
-  
-  # ---- Ns ----
-geom_text(
-  aes(label = paste0("N=", N),
-      vjust = ifelse(Mean_Change >= 0, -0.8, 1.4)),
-  position = position_dodge(.7),
-  size = 3
-) +
-  
-  scale_fill_manual(values = feedback_cols)+
-  
+  geom_text(
+    aes(
+      label = paste0("N=", N),
+      vjust = ifelse(Mean_Change >= 0, -0.8, 1.4)
+    ),
+    position = position_dodge(.7),
+    size = 3
+  ) +
+  scale_fill_manual(values = feedback_cols) +
   facet_wrap(
     ~Condition_SRP,
     labeller = labeller(
       Condition_SRP = c(
-        High = "High SRP",
-        Low  = "Low SRP"
+        High = "High SRP (Ambiguity)",
+        Low  = "Low SRP (Ambiguity)"
       )
     )
   ) +
-  
   labs(
     x = "Round",
     y = "Mean Change in Clicks (relative to Round 1)",
     fill = NULL
   ) +
-  
   theme_minimal(base_size = 13) +
   theme(
     legend.position = "bottom",
     panel.grid.minor = element_blank()
   )
 
+# SAVE
+ggsave(
+  file.path(paths$output_figures,
+            "FigureA11_Change_Baseline_Ambiguity.png"),
+  p_ambiguity,
+  width = 8,
+  height = 5,
+  dpi = 600
+)
 
-p_ambiguity
-
+# ===========================================================================
+# RISK FIGURE
+# ===========================================================================
 
 mean_changes_risk <- mean_changes_R1 %>%
   filter(Condition_Uncertainty == "Risk")
 
 p_risk <- ggplot(
   mean_changes_risk,
-  aes(x = factor(Round),
-      y = Mean_Change,
-      fill = Feedback)
+  aes(
+    x = factor(Round),
+    y = Mean_Change,
+    fill = Feedback
+  )
 ) +
-  geom_col(position = position_dodge(.7),
-           width = .65,
-           color = NA) +
-  
+  geom_col(
+    position = position_dodge(.7),
+    width = .65
+  ) +
   geom_errorbar(
-    aes(ymin = Mean_Change - SE_Change,
-        ymax = Mean_Change + SE_Change),
+    aes(
+      ymin = Mean_Change - SE_Change,
+      ymax = Mean_Change + SE_Change
+    ),
     width = .18,
     alpha = .4,
     position = position_dodge(.7)
   ) +
-  
   geom_text(
-    aes(label = paste0("N=", N),
-        vjust = ifelse(Mean_Change >= 0, -0.8, 1.4)),
+    aes(
+      label = paste0("N=", N),
+      vjust = ifelse(Mean_Change >= 0, -0.8, 1.4)
+    ),
     position = position_dodge(.7),
     size = 3
   ) +
-  
   scale_fill_manual(values = feedback_cols) +
-  
   facet_wrap(
     ~Condition_SRP,
     labeller = labeller(
       Condition_SRP = c(
-        High = "High SRP",
-        Low  = "Low SRP"
+        High = "High SRP (Risk)",
+        Low  = "Low SRP (Risk)"
       )
     )
   ) +
-  
   labs(
     x = "Round",
     y = "Mean Change in Clicks (relative to Round 1)",
     fill = NULL
   ) +
-  
   theme_minimal(base_size = 13) +
   theme(
     legend.position = "top",
     panel.grid.minor = element_blank()
   )
-
 p_risk
-
+# SAVE
 ggsave(
   file.path(paths$output_figures,
             "FigureA12_Change_Baseline_Risk.png"),
@@ -588,4 +613,4 @@ ggsave(
   dpi = 600
 )
 
-message("03_descriptives.R completed successfully.")
+message("Appendix figures saved successfully.")
