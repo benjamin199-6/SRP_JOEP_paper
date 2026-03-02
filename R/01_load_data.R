@@ -16,3 +16,4 @@ raw_data_main <- readr::read_csv(
   file.path(paths$data_raw, "Benjamin_Kirchler_2022.csv"),
   show_col_types = FALSE
 )
+message("Load Data finished successfully.")

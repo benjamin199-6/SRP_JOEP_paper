@@ -511,3 +511,121 @@ stargazer(
   no.space = TRUE
 )
 
+
+
+############################################################
+### BAYESIAN UPDATING ANALYSIS — AMBIGUITY CONDITION
+############################################################
+
+library(dplyr)
+library(purrr)
+library(lmtest)
+library(sandwich)
+
+# ----------------------------------------------------------
+# 1. Prepare data
+# ----------------------------------------------------------
+
+df_amb <- analysis_data %>%
+  filter(Condition_Uncertainty == "Ambiguity") %>%
+  arrange(Subject, Round) %>%
+  mutate(
+    # beliefs as probabilities
+    pi0 = Belief_0 / 100,
+    pi1 = Belief_1 / 100,
+    pi2 = Belief_2 / 100,
+    
+    # expected bombs
+    exp_bombs = (Belief_1 + 2*Belief_2)/100,
+    
+    # realized outcome
+    bomb = as.integer(Feedback == "Feedback_bomb")
+  )
+
+# ----------------------------------------------------------
+# 2. Likelihood of surviving k clicks
+# ----------------------------------------------------------
+
+safe_prob <- function(s, k, N = 100){
+  ifelse(k > (N - s), 0,
+         choose(N - s, k) / choose(N, k))
+}
+
+# vectorized expected bomb probability
+expected_bomb_prob <- function(pi0, pi1, pi2, k){
+  
+  p_safe =
+    pi0 * safe_prob(0, k) +
+    pi1 * safe_prob(1, k) +
+    pi2 * safe_prob(2, k)
+  
+  1 - p_safe
+}
+
+# ----------------------------------------------------------
+# 3. Prediction error ("surprise")
+# ----------------------------------------------------------
+
+df_amb <- df_amb %>%
+  mutate(
+    exp_p_bomb =
+      expected_bomb_prob(pi0, pi1, pi2, Clicks),
+    
+    surprise = bomb - exp_p_bomb
+  )
+
+# interpretation:
+# surprise > 0 → worse than expected
+# surprise < 0 → safer than expected
+
+# ----------------------------------------------------------
+# 4. Create panel changes (t → t+1)
+# ----------------------------------------------------------
+
+panel <- df_amb %>%
+  group_by(Subject) %>%
+  mutate(
+    d_belief = lead(exp_bombs) - exp_bombs,
+    d_clicks = lead(Clicks) - Clicks
+  ) %>%
+  ungroup() %>%
+  filter(!is.na(d_belief), !is.na(d_clicks))
+
+
+behavior_model <- lm(
+  d_clicks ~ surprise * Condition_SRP + Clicks + factor(Round),
+  data = panel
+)
+
+coeftest(
+  behavior_model,
+  vcov = vcovCL(behavior_model, cluster = ~Subject)
+)
+
+
+
+
+panel <- panel %>%
+  mutate(
+    surprise_type = ifelse(
+      surprise > 0,
+      "Unexpected bomb",
+      "Safer than expected"
+    )
+  )
+
+model_safer <- lm(
+  d_clicks ~ Condition_SRP + Clicks,
+  data = subset(panel, surprise_type == "Safer than expected")
+)
+
+model_worse <- lm(
+  d_clicks ~ Condition_SRP + Clicks,
+  data = subset(panel, surprise_type == "Unexpected bomb")
+)
+
+summary(model_safer)
+summary(model_worse)
+
+
+message("Analysis finished successfully.")

@@ -15,6 +15,5 @@ source("R/01_load_data.R")
 source("R/02_cleaning.R")
 source("R/03_descriptives.R")
 source("R/04_analysis.R")
-source("R/05_tables_figures.R")
 
 message("Masterfile finished successfully.")
