@@ -60,6 +60,8 @@ bombs_hidden <- data %>%
     values_to = "Bombs_hidden"
   ) %>%
   mutate(Round = as.numeric(gsub("\\D", "", Round)))
+table(bombs_hidden$Bombs_hidden, bombs_hidden$Round)
+
 
 # Bomb clicks
 bombs_clicked <- data %>%
@@ -70,6 +72,8 @@ bombs_clicked <- data %>%
     values_to = "Bombs_clicked"
   ) %>%
   mutate(Round = as.numeric(gsub("\\D", "", Round)))
+
+table(bombs_clicked$Bombs_clicked, bombs_clicked$Round)
 
 # Merge safely using panel keys
 long <- clicks_long %>%
@@ -149,6 +153,8 @@ long$Feedback <- factor(
   long$Feedback,
   levels = c("no feedback","Feedback_no_bomb","Feedback_bomb")
 )
+table(long$Feedback, long$Round)
+
 
 # ---------------------------------------------------------------------------
 # 8. Treatment conditions
@@ -235,16 +241,17 @@ analysis_data <- analysis_data %>%
 # 11. Save processed dataset
 # ---------------------------------------------------------------------------
 
-# saveRDS(
-#   analysis_data,
-#   file.path(paths$data_processed, "analysis_data.rds")
-# )
+ saveRDS(
+   analysis_data,
+   file.path(paths$data_processed, "analysis_data.rds") )
 # 
 # 
-# saveRDS(
-#   analysis_data2,
-#   file.path(paths$data_processed, "analysis_data_full.rds")
-# )
+ saveRDS(
+   analysis_data2,
+   file.path(paths$data_processed, "analysis_data_full.rds")
+ )
 
 message("Clean dataset saved.")
 message("02_clean_data.R completed successfully.")
+
+ 

@@ -196,8 +196,226 @@ ggsave(
 )
 
 # ---------------------------------------------------------------------------
-# 5. MECHANISM FIGURE — Immediate feedback effect
+# 5. MECHANISM Table 
 # ---------------------------------------------------------------------------
+df <- analysis_data %>%
+  mutate(Round = as.numeric(as.character(Round)))
+
+tab_r1 <- df %>%
+  filter(Round == 1) %>%
+  group_by(Condition_Uncertainty, Condition_SRP) %>%
+  summarise(
+    mean = mean(Clicks, na.rm = TRUE),
+    sd   = sd(Clicks, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(value = sprintf("%.2f (%.2f)", mean, sd))
+
+
+
+tab_fb <- df %>%
+  filter(Round > 1) %>%
+  group_by(
+    Condition_Uncertainty,
+    Condition_SRP,
+    Feedback,
+    Round
+  ) %>%
+  summarise(
+    mean = mean(Clicks, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(value = sprintf("%.2f", mean))
+
+
+tab_fb_wide <- tab_fb %>%
+  select(-mean) %>%
+  pivot_wider(
+    names_from = Round,
+    values_from = value,
+    names_prefix = "Round_"
+  )
+
+tab_fb_wide <- tab_fb_wide %>%
+  mutate(
+    Feedback = recode(Feedback,
+                      "Feedback_bomb" = "Bomb",
+                      "Feedback_no_bomb" = "No bomb"
+    ),
+    Condition = paste(Condition_Uncertainty, Condition_SRP, sep = ", ")
+  )
+
+
+
+df <- analysis_data %>%
+  dplyr::select(
+    ID,
+    Round,
+    Clicks,
+    Condition_Uncertainty,
+    Condition_SRP,
+    Feedback, 
+    Bomb_new
+  ) %>%
+  dplyr::mutate(
+    Round = as.numeric(as.character(Round))
+  ) %>%
+  dplyr::arrange(ID, Round)
+
+tabA_mean <- df %>%
+group_by(Condition_Uncertainty, Condition_SRP, Round) %>%
+  summarise(
+    mean_clicks = mean(Clicks, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+tabA <- tabA_mean %>%
+  group_by(Condition_Uncertainty, Condition_SRP) %>%
+  arrange(Round) %>%
+  mutate(
+    delta = mean_clicks - lag(mean_clicks),
+    pct_change = 100 * delta / lag(mean_clicks)
+  ) %>%
+  ungroup()
+
+
+tabB_mean <- df %>%
+  filter(Round > 1) %>%
+  group_by(
+    Condition_Uncertainty,
+    Condition_SRP,
+    Feedback,
+    Round
+  ) %>%
+  summarise(
+    mean_clicks = mean(Clicks, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+tabB <- tabB_mean %>%
+  group_by(
+    Condition_Uncertainty,
+    Condition_SRP,
+    Feedback
+  ) %>%
+  arrange(Round) %>%
+  mutate(
+    delta = mean_clicks - lag(mean_clicks),
+    pct_change = 100 * delta / lag(mean_clicks)
+  ) %>%
+  ungroup()
+
+tabB_r1 <- df %>%
+  filter(Round == 1) %>%
+  group_by(Condition_Uncertainty, Condition_SRP) %>%
+  summarise(
+    mean_clicks = mean(Clicks),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    Feedback = "no feedback",
+    Round = 1,
+    delta = NA,
+    pct_change = NA
+  )
+tabB_full <- bind_rows(tabB_r1, tabB)
+
+
+
+# 
+
+df_r1r2 <- data %>%
+  filter(Round %in% c(1,2)) %>%
+  group_by(ID) %>%
+  summarise(
+    Condition_Uncertainty = first(Condition_Uncertainty),
+    Condition_SRP = first(Condition_SRP),
+    Clicks_R1 = Clicks[Round == 1][1],
+    Clicks_R2 = Clicks[Round == 2][1],
+    Bomb_R1   = Bomb_new[Round == 1][1],
+    .groups = "drop"
+  )
+
+
+df_r1r2 <- df_r1r2 %>%
+  mutate(
+    Feedback = ifelse(Bomb_R1 == 1, "Bomb", "No bomb"),
+    delta_clicks = Clicks_R2 - Clicks_R1,
+    pct_change = 100 * delta_clicks / Clicks_R1
+  )
+
+table=df_r1r2 %>%
+  group_by(Condition_Uncertainty, Condition_SRP,Feedback) %>%
+  summarise(
+    mean_R1 = mean(Clicks_R1),
+    mean_R2 = mean(Clicks_R2),
+    mean_delta = mean(delta_clicks),
+    n = n(),
+    .groups = "drop"
+  )
+
+table
+
+feols(
+  Clicks_R2 ~ Bomb_R1 + Clicks_R1,
+  data = df_r1r2
+)
+
+feols(
+  Clicks ~ lag(Bomb_new) | ID + Round,
+  cluster = ~ID,
+  data = data
+)
+
+df_r1r2 <- data %>%
+  filter(Round %in% c(1,2)) %>%
+  group_by(ID) %>%
+  summarise(
+    Condition_Uncertainty = first(Condition_Uncertainty),
+    Condition_SRP = first(Condition_SRP),
+    Clicks_R1 = Clicks[Round == 1][1],
+    Clicks_R2 = Clicks[Round == 2][1],
+    Bomb_R1   = Bomb_new[Round == 1][1],
+    delta = Clicks_R2 - Clicks_R1,
+    .groups = "drop"
+  )
+anova_r1r2 <- aov(
+  delta ~ Bomb_R1 * Condition_SRP * Condition_Uncertainty,
+  data = df_r1r2
+)
+
+summary(anova_r1r2)
+
+
+anova_r1r2_ctrl <- aov(
+  Clicks_R2 ~ Clicks_R1 + Bomb_R1 * Condition_SRP * Condition_Uncertainty,
+  data = df_r1r2
+)
+
+summary(anova_r1r2_ctrl)
+
+
+library(ppcor)
+
+pcor.test(
+  df_r1r2$Clicks_R2,
+  df_r1r2$Bomb_R1,
+  df_r1r2$Clicks_R1
+)
+#### new
+
+detla=df %>%
+  group_by(ID) %>%
+  mutate(delta = Clicks - lag(Clicks)) %>%
+  filter(Round > 1) %>%
+  group_by(Condition_Uncertainty, Condition_SRP, Feedback, Round) %>%
+  summarise(mean_delta = mean(delta, na.rm = TRUE))
+
+
+
+
+
+
 
 df_changes <- analysis_data %>%
   arrange(Subject, Round) %>%

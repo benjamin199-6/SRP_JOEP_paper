@@ -96,6 +96,7 @@ names(analysis_data)
 
 str(analysis_data)
 
+#4.3.	Underlying decision-mechanisms: beliefs and feedback 
 
 df_beliefs <- analysis_data %>%
   filter(
@@ -151,26 +152,138 @@ analysis_data <- analysis_data %>%
   )
 
 
-cor(analysis_data$expected_bombs,
-    analysis_data$Clicks,
-    use = "complete.obs")
+# High SRP
+cor.test(
+  analysis_data$expected_bombs[analysis_data$Condition_SRP == "High"],
+  analysis_data$Clicks[analysis_data$Condition_SRP == "High"]
+)
 
-analysis_data %>%
-  dplyr::group_by(Condition_SRP) %>%
-  dplyr::summarise(
-    test = list(cor.test(expected_bombs, Clicks, use = "complete.obs")),
+# Low SRP
+cor.test(
+  analysis_data$expected_bombs[analysis_data$Condition_SRP == "Low"],
+  analysis_data$Clicks[analysis_data$Condition_SRP == "Low"]
+)
+
+#### Correlation of bomb in R1 and Clicks in subsequent round(s)
+
+df_r1r2 <- analysis_data %>%
+  filter(Round %in% c(1,2)) %>%
+  group_by(ID) %>%
+  summarise(
+    Clicks_R1 = Clicks[Round == 1][1],
+    Clicks_R2 = Clicks[Round == 2][1],
+    Bomb_R1   = Bomb_new[Round == 1][1],
     .groups = "drop"
+  )
+
+cor.test(df_r1r2$Bomb_R1, df_r1r2$Clicks_R2)
+
+# over all rounds 
+
+
+df_panel <- analysis_data %>% select(ID, Round, Clicks, Bomb_new, Condition_SRP,Condition_Uncertainty) %>% 
+  arrange(ID, Round) %>%
+  group_by(ID) %>%
+  mutate(
+    lag_bomb = lag(Bomb_new),
+    mean_clicks = mean(Clicks, na.rm = TRUE)
   ) %>%
-  dplyr::mutate(
-    correlation = sapply(test, function(x) x$estimate),
-    p_value     = sapply(test, function(x) x$p.value),
-    n           = sapply(test, function(x) x$parameter + 2)
+  ungroup() %>%
+  filter(!is.na(lag_bomb))
+
+cor.test(df_panel$lag_bomb, df_panel$Clicks)
+
+
+# For SRP and Uncertainty conditons 
+res_full <- df_panel %>%
+  group_split(Condition_SRP, Condition_Uncertainty) %>%
+  map_df(function(df_sub) {
+    test <- cor.test(df_sub$lag_bomb, df_sub$Clicks)
+    tibble(
+      Condition_SRP = df_sub$Condition_SRP[1],
+      Condition_Uncertainty = df_sub$Condition_Uncertainty[1],
+      r = test$estimate,
+      p = test$p.value,
+      n = nrow(df_sub)
+    )
+  })
+
+df_panel$Bomb_new=as.factor(df_panel$Bomb_new)
+
+
+feols(
+  Clicks ~ lag(Bomb_new) |ID+ Round,
+  cluster = ~ID,
+  data = df_panel
+)
+
+df_r1r2 <- analysis_data %>%
+  filter(Round %in% c(1, 2)) %>%
+  group_by(ID) %>%
+  filter(any(Round == 1) & any(Round == 2)) %>%  # ensure complete pairs
+  summarise(
+    Condition_Uncertainty = first(Condition_Uncertainty),
+    Condition_SRP = first(Condition_SRP),
+    Clicks_R1 = Clicks[Round == 1][1],
+    Clicks_R2 = Clicks[Round == 2][1],
+    Bomb_R1   = Bomb_new[Round == 1][1],
+    delta = Clicks_R2 - Clicks_R1,
+    .groups = "drop"
+  )
+df_r1r2$Bomb_R1=as.factor(df_r1r2$Bomb_R1)
+anova_model=aov(delta ~ Bomb_R1 + Condition_Uncertainty, data = df_r1r2)
+TukeyHSD(anova_model)
+
+### Corr between belief and feedback +
+
+analysis_data <- analysis_data %>%
+  mutate(
+    expected_bombs =
+      (0 * Belief_0 + 1 * Belief_1 + 2 * Belief_2) / 100
+  )
+
+
+df_belief_panel <- analysis_data %>%
+  arrange(ID, Round) %>%
+  group_by(ID) %>%
+  mutate(
+    lag_bomb = lag(Bomb_new),
+    belief_next = expected_bombs   # belief in current round
   ) %>%
-  dplyr::select(Condition_SRP, correlation, p_value, n)
+  ungroup() %>%
+  filter(!is.na(lag_bomb), !is.na(belief_next))
 
 
-table(analysis_data$Feedback, analysis_data$Round)
+cor.test(df_belief_panel$lag_bomb, df_belief_panel$belief_next)
 
+
+##hiers
+res_srp_beliefs <- df_belief_panel %>%
+  group_split(Condition_SRP) %>%
+  map_df(function(df_sub) {
+    test <- cor.test(df_sub$lag_bomb, df_sub$belief_next)
+    tibble(
+      Condition_SRP = df_sub$SRP[1],
+      r = test$estimate,
+      p = test$p.value,
+      n = nrow(df_sub)
+    )
+  })
+
+res_srp_beliefs
+
+
+
+
+
+
+
+
+
+
+
+#old
+####
 
 df_changes <- analysis_data %>%
   arrange(Subject, Round) %>%
