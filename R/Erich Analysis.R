@@ -258,6 +258,7 @@ cor.test(df_belief_panel$lag_bomb, df_belief_panel$belief_next)
 
 
 ##hiers
+
 res_srp_beliefs <- df_belief_panel %>%
   group_split(Condition_SRP) %>%
   map_df(function(df_sub) {
