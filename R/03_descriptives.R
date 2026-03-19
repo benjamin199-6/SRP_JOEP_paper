@@ -65,6 +65,7 @@ catVars <- c(
   "Education_Level",
   "Risk_attitude"
 )
+library(tableone)
 
 table1 <- CreateTableOne(
   vars = vars,
@@ -98,6 +99,13 @@ fig_round1 <- analysis_data %>%
     .groups = "drop"
   )
 
+fig_round1$Condition_Uncertainty <- factor(
+  fig_round1$Condition_Uncertainty,
+  levels = c("Risk", "Ambiguity"),
+  labels = c("Risk", "Ambiguity")
+)
+
+
 p1 <- ggplot(fig_round1,
              aes(x = Condition_SRP,
                  y = Mean_Clicks,
@@ -110,8 +118,8 @@ p1 <- ggplot(fig_round1,
                 position = position_dodge(.8)) +
   scale_fill_manual(values = wes_cols) +
   labs(
-    x = "SRP Condition",
-    y = "Mean Clicks (Round 1)",
+    x = "SRP condition",
+    y = "Mean number of clicks (round 1)",
     fill = NULL
   ) +
   theme_minimal(base_size = 13) +
@@ -119,43 +127,56 @@ p1 <- ggplot(fig_round1,
 
 
 p1
+
 ggsave(
   file.path(paths$output_figures,
-            "Figure_mean_clicks_round1.png"),
+            "Figure_4.png"),
   p1, width = 7, height = 5, dpi = 300
 )
 
 # ---------------------------------------------------------------------------
 # 4. FIGURE — Click dynamics across rounds
 # ---------------------------------------------------------------------------
-
 fig_dyn <- analysis_data %>%
   group_by(Round, Condition_SRP, Condition_Uncertainty) %>%
   summarise(
-    Mean_Clicks = mean(Clicks),
-    SE = sd(Clicks)/sqrt(n()),
+    mean_clicks = mean(Clicks, na.rm = TRUE),
+    se = sd(Clicks, na.rm = TRUE)/sqrt(n()),
     .groups = "drop"
   )
 
-p2 <- ggplot(fig_dyn,
-             aes(x = as.numeric(as.character(Round)),
-                 y = Mean_Clicks,
-                 color = Condition_SRP,
-                 group = Condition_SRP)) +
-  geom_line(size = 1.1) +
+# force panel order: risk left, ambiguity right
+fig_dyn$Condition_Uncertainty <- factor(
+  fig_dyn$Condition_Uncertainty,
+  levels = c("Risk","Ambiguity"),
+  labels = c("Risk","Ambiguity")
+)
+
+p2 <- ggplot(
+  fig_dyn,
+  aes(
+    x = Round,
+    y = mean_clicks,
+    color = Condition_SRP,
+    group = Condition_SRP
+  )
+) +
+  geom_line(linewidth = 1.1) +
   geom_point(size = 2.2) +
-  geom_errorbar(aes(ymin = Mean_Clicks - SE,
-                    ymax = Mean_Clicks + SE),
-                width = .15,
-                alpha = .5) +
+  geom_errorbar(
+    aes(ymin = mean_clicks - se,
+        ymax = mean_clicks + se),
+    width = .15,
+    alpha = .5
+  ) +
   scale_color_manual(
     values = wes_cols,
-    labels = c("High SRP","Low SRP")
+    labels = c("High-SRP","Low-SRP")
   ) +
-  facet_wrap(~Condition_Uncertainty) +
+  facet_wrap(~Condition_Uncertainty, nrow = 1) +
   labs(
     x = "Round",
-    y = "Mean Clicks",
+    y = "Mean number of clicks",
     color = NULL
   ) +
   theme_minimal(base_size = 13) +
@@ -163,10 +184,14 @@ p2 <- ggplot(fig_dyn,
     legend.position = "bottom",
     panel.grid.minor = element_blank()
   )
+
 p2
+
+
+
 ggsave(
   file.path(paths$output_figures,
-            "Figure_click_dynamics.png"),
+            "Figure_5.png"),
   p2, width = 8, height = 4.5, dpi = 300
 )
 

@@ -43,21 +43,16 @@ r3 <- filter(analysis_data, Round == 3)
 r4 <- filter(analysis_data, Round == 4)
 r5 <- filter(analysis_data, Round == 5)
 
+names(r1)
+
 model_formula1 <- Clicks ~ Condition_SRP +
-  Condition_Uncertainty +
-  Risk_attitude +
-  Female +
-  Age +
-  Income_1
+  Condition_Uncertainty 
 
 model_formula <- Clicks ~ Condition_SRP +
-  Condition_Uncertainty +
-  Risk_attitude +
-  Female +
-  Age +
-  Income_1 +
-  Feedback
-
+Condition_Uncertainty + Condition_SRP *
+  Condition_Uncertainty
+  
+  Condition_Uncertainty 
 # Poisson marginal effects (paper specification)
 
 reg1.1 <- poissonmfx(model_formula1, data = r1, atmean = TRUE, robust = TRUE)
@@ -71,10 +66,113 @@ reg1.5 <- poissonmfx(model_formula,  data = r5, atmean = TRUE, robust = TRUE)
 # ---------------------------------------------------------------------------
 
 ols1 <- lm(model_formula1, data = r1)
+
+
+library(rstatix)
+anova_test(data = r1, Clicks~Condition_SRP*Condition_Uncertainty, effect.size = "pes")
+
+
+### non parametric:
+install.packages("rcompanion")
+library(rcompanion)
+
+scheirerRayHare(Clicks ~ Condition_SRP + Condition_Uncertainty + Condition_SRP:Condition_Uncertainty, data = r1)
+scheirerRayHare(Clicks ~ Condition_SRP + Condition_Uncertainty + Condition_SRP:Condition_Uncertainty, data = analysis_data)
+
+# wilcox.test(Clicks ~ Condition_SRP, data = analysis_data)
+
+
+
+
+
+
+
+
+
+
+
+
+str(analysis_data$Round)
+
+
+
+
+anova_test(
+  data = analysis_data,
+  dv = Clicks,
+  wid = ID,
+  within = Round,
+  between = c(Condition_SRP, Condition_Uncertainty),
+  effect.size = "pes"
+)
+
+library(afex)
+
+
+analysis_data$Round <- factor(analysis_data$Round)
+
+model <- aov_ez(
+  id = "ID",                      # or "ID" depending on your data
+  dv = "Clicks",
+  data = analysis_data,
+  within = "Round",
+  between = c("Condition_SRP", "Condition_Uncertainty")
+)
+
+model
+
+
+analysis_data %>%
+  group_by(Condition_SRP, Condition_Uncertainty, Round) %>%
+  summarise(
+    n = n(),
+    mean_clicks = mean(Clicks, na.rm = TRUE),
+    sd_clicks = sd(Clicks, na.rm = TRUE),
+    .groups = "drop"
+  )
+library(emmeans)
+
+emm <- emmeans(
+  model,
+  ~ Condition_SRP | Condition_Uncertainty * Round
+)
+
+emm
+
+
+contrast_results <- contrast(
+  emm,
+  method = "revpairwise"
+)
+
+contrast_results
+
+anova_table <- anova(model)
+anova_table
+### old
+
+lm=lm(data=r1,  Clicks~Condition_SRP:Condition_Uncertainty)
+summary(lm)
+car::Anova(lm, type = 2)
+
+r1 %>% group_by(Condition_SRP,Condition_Uncertainty) %>% summarise(mean=mean(Clicks), sd=sd(Clicks))
+
+
+
 ols2 <- lm(model_formula,  data = r2)
 ols3 <- lm(model_formula,  data = r3)
 ols4 <- lm(model_formula,  data = r4)
 ols5 <- lm(model_formula,  data = r5)
+
+summary(ols1)
+summary(ols2)
+summary(ols3)
+summary(ols4)
+summary(ols5)
+
+emm1 <- emmeans(ols1, ~ Condition_SRP * Condition_Uncertainty)
+
+pairs(emm1, adjust = "tukey")
 
 se1 <- sqrt(diag(vcovHC(ols1, type="HC1")))
 se2 <- sqrt(diag(vcovHC(ols2, type="HC1")))
@@ -122,11 +220,51 @@ stargazer(
 )
 
 
+
+### ANCOVA
+library(dplyr)
+library(purrr)
+library(car)
+
+
+r1 <- analysis_data %>%
+  filter(Round == 1)
+
+
+model_r1 <- lm(
+  Clicks ~ Condition_SRP * Condition_Uncertainty, 
+  data = r1
+)
+
+library(car)
+
+Anova(model_r1, type = 2)
+
+
+library(emmeans)
+
+emm <- emmeans(model_r1, ~ Condition_SRP * Condition_Uncertainty)
+pairs(emm, adjust = "tukey")
+emmeans(model_r1, pairwise ~ Condition_SRP | Condition_Uncertainty,
+        adjust = "tukey")
+
+
+r1 <- analysis_data %>%
+  filter(Round == 1)
+
+r1$Condition_SRP <- factor(r1$Condition_SRP)
+r1$Condition_Uncertainty <- factor(r1$Condition_Uncertainty)
+r1$group <- interaction(r1$Condition_SRP, r1$Condition_Uncertainty)
+
+kruskal.test(Clicks ~ group, data = r1)
+
+
+
 #### Joint analysis 
   
 #---- 4) Joint / pooled analysis (all rounds; paper Table 3 style) ----
 
-model_1 <- Clicks ~ Condition_SRP + Condition_Uncertainty
+model_1 <- Clicks ~ Condition_SRP * Condition_Uncertainty*Round
 model_2 <- Clicks ~ Condition_SRP:Condition_Uncertainty
 
 # Poisson marginal effects 
@@ -136,6 +274,10 @@ pois_all_2 <- poissonmfx(data = analysis_data, formula = model_2, atmean = TRUE,
 # OLS robustness 
 ols_all_1 <- lm(model_1, data = analysis_data)
 ols_all_2 <- lm(model_2, data = analysis_data)
+
+summary(ols_all_1)
+emm1 <- emmeans(ols_all_1, ~ Condition_SRP * Condition_Uncertainty*Round)
+pairs(emm1, adjust = "tukey")
 
 se_ols_all_1 <- sqrt(diag(vcovHC(ols_all_1, type = "HC1")))
 se_ols_all_2 <- sqrt(diag(vcovHC(ols_all_2, type = "HC1")))
@@ -277,12 +419,12 @@ p_perm_risk <- pvalue(perm_risk)
 
 ######### Mechanisms
 # ---- Prepare data ----
-ambiguity_df <- analysis_data %>%
-  filter(Condition_Uncertainty == "Ambiguity") %>%
-  mutate(
-    average_belief =
-      (0 * Belief_0 + 1 * Belief_1 + 2 * Belief_2) / 100
-  )
+  ambiguity_df <- analysis_data %>%
+    filter(Condition_Uncertainty == "Ambiguity") %>%
+    mutate(
+      average_belief =
+        (0 * Belief_0 + 1 * Belief_1 + 2 * Belief_2) / 100
+    )
 
 #------------------------------------------------------------
 # Models
@@ -629,3 +771,34 @@ summary(model_worse)
 
 
 message("Analysis finished successfully.")
+
+
+
+table_stats <- r1 %>%
+  group_by(Condition_Uncertainty, Condition_SRP) %>%
+  summarise(
+    N = n(),
+    Mean = mean(Clicks, na.rm = TRUE),
+    SD = sd(Clicks, na.rm = TRUE),
+    SE = SD / sqrt(N),
+    CI_low  = Mean - qt(0.975, df = N - 1) * SE,
+    CI_high = Mean + qt(0.975, df = N - 1) * SE,
+    .groups = "drop"
+  )
+table_stats
+
+
+lm_all <- lm(
+  Clicks ~ Condition_SRP * Condition_Uncertainty,
+  data = analysis_data
+)
+
+summary(lm_all)
+anova(lm_all)
+
+library(emmeans)
+
+pairs(
+  emmeans(lm_all, ~ Condition_SRP * Condition_Uncertainty),
+  adjust = "tukey"
+)
