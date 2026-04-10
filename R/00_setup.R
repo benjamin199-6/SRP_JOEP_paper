@@ -6,7 +6,6 @@
 # - Load required packages
 # - Define project paths
 # - Set global options
-# - Ensure reproducibility
 #
 
 ###############################################################################
@@ -28,7 +27,18 @@ required_packages <- c(
   "here",
   "janitor",
   "fixest",
-  "readr"
+  "readr",
+  "lmtest",
+  "sandwich",
+  "stargazer",
+  "mfx",
+  "coin",
+  "rcompanion",
+  "rstatix",
+  "afex",
+  "emmeans",
+  "tableone",
+  "wesanderson"
 )
 
 installed <- rownames(installed.packages())
@@ -50,15 +60,13 @@ paths <- list(
   data_raw       = here::here("data", "raw"),
   data_processed = here::here("data", "processed"),
   output_tables  = here::here("paper", "tables"),
-  output_figures = here::here("paper", "figures"),
-  output_models  = here::here("output", "models")
+  output_figures = here::here("paper", "figures")
 )
 dir.create("data/raw", recursive = TRUE)
 # Create folders if missing
 dir.create(paths$data_processed, recursive = TRUE, showWarnings = FALSE)
 dir.create(paths$output_tables, recursive = TRUE, showWarnings = FALSE)
 dir.create(paths$output_figures, recursive = TRUE, showWarnings = FALSE)
-dir.create(paths$output_models, recursive = TRUE, showWarnings = FALSE)
 
 # ---------------------------------------------------------------------------
 # 5. Sanity checks

@@ -2,12 +2,7 @@
 # 02_clean_data.R
 #
 # Purpose:
-# Clean and transform raw experimental survey data into analysis dataset.
-#
-# Reproducibility principles:
-# 1. Raw data NEVER modified
-# 2. Deterministic transformations only
-# 3. Panel structure defined by (ID × Round)
+# Clean and transform raw experimental survey data into analysis dataset
 #
 # Input  : raw_data_main
 # Output : data/processed/analysis_data.rds

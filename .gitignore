@@ -3,23 +3,10 @@
 .RData
 .Rproj.user/
 
-# Data 
-# 1. Ignore the data folder content by default
-data/*
-
-# 2. ALLOW the entire raw and processed folders
-!data/raw/
-!data/processed/
-
-# 3. Specifically block these as per your original preference
-data/interim/*
-data/final/*
-!data/**/.keep
-
-# Output
-output/*
-!output/**/.keep
-
 # OS / editor
 .DS_Store
 Thumbs.db
+
+# Output (optional: keep this ignored)
+output/*
+!output/**/.keep

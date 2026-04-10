@@ -3,29 +3,12 @@
 #
 # Purpose:
 # Replicate econometric analysis of the JOEP paper.
-#
-# Sections:
-# - Round-specific regressions
-# - Robustness (OLS)
-# - Pooled models
-# - Belief models
-# - Inequality preferences
-# - Nonparametric tests
+
 ###############################################################################
 
 message("Running 04_analysis.R ...")
 
-library(dplyr)
-library(fixest)
-library(lmtest)
-library(sandwich)
-library(stargazer)
-library(mfx)
-library(coin)
-library(rcompanion)
-library(rstatix)
-library(afex)
-library(emmeans)
+
 # ---------------------------------------------------------------------------
 # Load data
 # ---------------------------------------------------------------------------
